@@ -7,6 +7,6 @@ step for work:
 
 -open termina
 
--gcc -o file_system main.c file_system.c
+-   gcc -o file_system main.c file_system.c
 
--./file_system 
+-  ./file_system 
