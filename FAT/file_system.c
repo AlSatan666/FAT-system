@@ -105,8 +105,9 @@ void seek(FileSystem* fs, const char* filename, int position) {
         if (strcmp(entries[i].name, filename) == 0 && !entries[i].is_dir) {
             if (position >= 0 && position < MAX_FILE_SIZE) {
                 entries[i].position = position;
+                printf("\nPosition of file '%s' set to %d.\n", filename, position);
             } else {
-                printf("\nInvalid position.\n");
+                 printf("\nInvalid position. Position must be between 0 and %d.\n", MAX_FILE_SIZE - 1);
             }
             return;
         }
@@ -167,6 +168,8 @@ void eraseDir(FileSystem* fs, const char* dirname) {
 }
 
 void changeDir(FileSystem* fs, const char* dirname) {
+    printf("Attempting to change directory to: %s\n", dirname);
+    printf("To return to the previous directory, use 'changeDir ..'\n");
     if (strcmp(dirname, "..") == 0) {
         if (fs->current_directory->parent) {
             fs->current_directory = fs->current_directory->parent;
@@ -232,5 +235,5 @@ void printCurrentDir(FileSystem* fs) {
         }
         dir = dir->parent;
     }
-    printf("Current Directory: /CASA%s\n", path);
+    printf("Current Directory: %s\n", path);
 }
