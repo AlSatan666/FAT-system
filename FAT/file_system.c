@@ -15,29 +15,14 @@ void createFile(FileSystem* fs, const char* filename) {
         }
     }
 
-    int position = -1;
-    for (int i = 0; i < fs->buffer_size; i += MAX_FILE_SIZE) {
-        int is_free = 1;
-        for (int j = 0; j < MAX_FILE_SIZE; ++j) {
-            if (fs->buffer[i + j] != '\0') {
-                is_free = 0;
-                break;
-            }
-        }
-        if (is_free) {
-            position = i;
-            break;
-        }
-    }
-
-    if (position == -1) {
+    if (fs->next_free_position + MAX_FILE_SIZE > fs->buffer_size) {
         printf("\nNo free space available.\n");
         return;
     }
 
     DirectoryEntry new_entry;
     strcpy(new_entry.name, filename);
-    new_entry.position = position;
+    new_entry.position = fs->next_free_position;
     new_entry.is_dir = 0;
     new_entry.subdir = NULL;
 
@@ -50,8 +35,10 @@ void createFile(FileSystem* fs, const char* filename) {
 
     fs->current_directory->entries = entries;
     fs->current_directory->num_entries++;
-    printf("Successfully created file: %s \n", filename);
-}  
+    fs->next_free_position += MAX_FILE_SIZE;
+    printf("Successfully created file: %s\n", filename);
+}
+  
 
 void eraseFile(FileSystem* fs, const char* filename) {
     printf("Attempting to erase file: %s\n", filename);
