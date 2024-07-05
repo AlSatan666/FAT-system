@@ -1,52 +1,49 @@
 #ifndef FILE_SYSTEM_H
 #define FILE_SYSTEM_H
+#ifndef _SSIZE_T_DEFINED
+typedef long ssize_t;
+#define _SSIZE_T_DEFINED
+#endif
 
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <sys/mman.h>
-#include <fcntl.h>
-#include <unistd.h>
+#include <stdint.h>
+#include <stddef.h>
 
-#define MAX_FILE_NAME 255
-#define BLOCK_SIZE 512
-#define MAX_BLOCKS 1024
-#define MAX_FILES 100
+#define BLOCK_SIZE 4096
+#define MAX_FILENAME_LENGTH 255
 
 typedef struct {
-    char name[MAX_FILE_NAME];
-    int size;
-    int start_block;
-} FileEntry;
+    int32_t next_block;
+} FATEntry;
 
 typedef struct {
-    char name[MAX_FILE_NAME];
-    int start_block;
-    int size;
+    char name[MAX_FILENAME_LENGTH];
+    int8_t is_directory;
+    int32_t first_block;
 } DirectoryEntry;
 
 typedef struct {
-    FileEntry files[MAX_FILES];
-    DirectoryEntry dirs[MAX_FILES];
-    int file_count;
-    int dir_count;
-    int current_dir; // New field for current directory index
-} FAT;
-
-typedef struct {
-    int block_index;
-    int position;
+    int32_t block_index;
+    int32_t position;
 } FileHandle;
 
-void initialize_filesystem(const char *filepath);
-FileHandle *createFile(const char *filename);
-void eraseFile(const char *filename);
-void writeFile(FileHandle *handle, const void *buffer, int size);
-void readFile(FileHandle *handle, void *buffer, int size);
-void seekFile(FileHandle *handle, int position);
-void createDir(const char *dirname);
-void eraseDir(const char *dirname);
-void changeDir(const char *dirname);
-void listDir();
+typedef struct {
+    int fd;
+    uint8_t *data;
+    FATEntry *fat;
+    DirectoryEntry *root_dir;
+    int num_blocks;
+    int fat_size;
+} FileSystem;
 
-#endif // FILE_SYSTEM_H
+void initialize_filesystem(FileSystem *fs, const char *file_path, int num_blocks);
+int create_file(FileSystem *fs, const char *name);
+int erase_file(FileSystem *fs, const char *name);
+ssize_t write_file(FileSystem *fs, FileHandle *fh, const void *data, size_t size);
+ssize_t read_file(FileSystem *fs, FileHandle *fh, void *buffer, size_t size);
+int seek_file(FileSystem *fs, FileHandle *fh, int32_t position);
+int create_dir(FileSystem *fs, const char *name);
+int erase_dir(FileSystem *fs, const char *name);
+int change_dir(FileSystem *fs, const char *path);
+void list_dir(FileSystem *fs);
+
+#endif
