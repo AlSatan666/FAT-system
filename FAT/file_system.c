@@ -77,10 +77,41 @@ void eraseFile(FileSystem* fs, const char* filename) {
 }
 
 void write(FileSystem* fs, const char* filename, const char* data) {
-}  
+    printf("Attempting to write to file: %s\n", filename);
+    DirectoryEntry* entries = fs->current_directory->entries;
+    int num_entries = fs->current_directory->num_entries;
+
+    for (int i = 0; i < num_entries; ++i) {
+        if (strcmp(entries[i].name, filename) == 0 && !entries[i].is_dir) {
+            int data_length = strlen(data);
+            if (data_length > MAX_FILE_SIZE) {
+                data_length = MAX_FILE_SIZE;
+            }
+            strncpy(fs->buffer + entries[i].position, data, data_length);
+            printf("Successfully wrote to file: %s\n", filename);
+            return;
+        }
+    }
+
+    printf("\nFile not found.\n");
+}
 
 void read(FileSystem* fs, const char* filename, char* data, int size) {
-}  
+    printf("Attempting to read from file: %s\n", filename);
+    DirectoryEntry* entries = fs->current_directory->entries;
+    int num_entries = fs->current_directory->num_entries;
+
+    for (int i = 0; i < num_entries; ++i) {
+        if (strcmp(entries[i].name, filename) == 0 && !entries[i].is_dir) {
+            strncpy(data, fs->buffer + entries[i].position, size);
+            printf("Successfully read from file: %s\n", filename);
+            return;
+        }
+    }
+
+    printf("\nFile not found.\n");
+}
+ 
 
 void seek(FileSystem* fs, const char* filename) {
     printf("Attempting to seek file: %s\n", filename);
