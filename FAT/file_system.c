@@ -1,172 +1,223 @@
 #include "file_system.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/mman.h>
+#include <errno.h>
 
-FAT *fat;
-void *data_blocks;
+void initialize_filesystem(FileSystem *fs, const char *file_path, int num_blocks) {
+    fs->num_blocks = num_blocks;
+    fs->fat_size = num_blocks * sizeof(FATEntry);
 
-void initialize_filesystem(const char *filepath) {
-    int fd = open(filepath, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
-    if (fd == -1) {
-        perror("Failed to open file");
+    fs->fd = open(file_path, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR);
+    if (fs->fd == -1) {
+        perror("Error opening file");
         exit(EXIT_FAILURE);
     }
 
-    if (ftruncate(fd, sizeof(FAT) + BLOCK_SIZE * MAX_BLOCKS) == -1) {
-        perror("Failed to resize file");
-        close(fd);
+    if (ftruncate(fs->fd, num_blocks * BLOCK_SIZE) == -1) {
+        perror("Error setting file size");
         exit(EXIT_FAILURE);
     }
 
-    void *map = mmap(NULL, sizeof(FAT) + BLOCK_SIZE * MAX_BLOCKS, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    if (map == MAP_FAILED) {
-        perror("Failed to map file");
-        close(fd);
+    fs->data = mmap(NULL, num_blocks * BLOCK_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fs->fd, 0);
+    if (fs->data == MAP_FAILED) {
+        perror("Error mapping file");
         exit(EXIT_FAILURE);
     }
 
-    fat = (FAT *)map;
-    data_blocks = map + sizeof(FAT);
+    fs->fat = (FATEntry *)fs->data;
+    fs->root_dir = (DirectoryEntry *)(fs->data + fs->fat_size);
 
-    if (fat->file_count == 0 && fat->dir_count == 0) {
-        // Initialize root directory if not already initialized
-        strcpy(fat->dirs[0].name, "/");
-        fat->dirs[0].start_block = 0;
-        fat->dirs[0].size = 0;
-        fat->dir_count = 1;
-        fat->current_dir = 0;
-    }
-
-    close(fd);
+    // Initialize FAT and root directory if necessary
+    memset(fs->fat, -1, fs->fat_size);
+    memset(fs->root_dir, 0, BLOCK_SIZE - fs->fat_size);
 }
 
-FileHandle *createFile(const char *filename) {
-    if (fat->file_count >= MAX_FILES) {
-        printf("File limit reached.\n");
-        return NULL;
+int create_file(FileSystem *fs, const char *name) {
+    int first_block = -1;
+    for (int i = 0; i < fs->num_blocks; i++) {
+        if (fs->fat[i].next_block == -1) {
+            first_block = i;
+            fs->fat[i].next_block = 0;
+            break;
+        }
     }
+    if (first_block == -1) return -1;
 
-    for (int i = 0; i < fat->file_count; i++) {
-        if (strcmp(fat->files[i].name, filename) == 0) {
-            printf("File already exists.\n");
-            return NULL;
+    DirectoryEntry *dir = fs->root_dir;
+    for (int i = 0; i < (BLOCK_SIZE - fs->fat_size) / sizeof(DirectoryEntry); i++) {
+        if (dir[i].first_block == 0) {
+            strncpy(dir[i].name, name, MAX_FILENAME_LENGTH);
+            dir[i].is_directory = 0;
+            dir[i].first_block = first_block;
+            return 0;
         }
     }
 
-    strcpy(fat->files[fat->file_count].name, filename);
-    fat->files[fat->file_count].size = 0;
-    fat->files[fat->file_count].start_block = -1;
-    fat->file_count++;
-
-    FileHandle *handle = malloc(sizeof(FileHandle));
-    if (handle == NULL) {
-        perror("Failed to allocate FileHandle");
-        return NULL;
-    }
-    handle->block_index = fat->files[fat->file_count - 1].start_block;
-    handle->position = 0;
-
-    return handle;
+    fs->fat[first_block].next_block = -1;
+    return -1;
 }
 
-void eraseFile(const char *filename) {
-    for (int i = 0; i < fat->file_count; i++) {
-        if (strcmp(fat->files[i].name, filename) == 0) {
-            for (int j = i; j < fat->file_count - 1; j++) {
-                fat->files[j] = fat->files[j + 1];
+int erase_file(FileSystem *fs, const char *name) {
+    DirectoryEntry *dir = fs->root_dir;
+    for (int i = 0; i < (BLOCK_SIZE - fs->fat_size) / sizeof(DirectoryEntry); i++) {
+        if (dir[i].first_block != 0 && strncmp(dir[i].name, name, MAX_FILENAME_LENGTH) == 0) {
+            int block = dir[i].first_block;
+            while (block != -1) {
+                int next_block = fs->fat[block].next_block;
+                fs->fat[block].next_block = -1;
+                block = next_block;
             }
-            fat->file_count--;
-            return;
+            dir[i].first_block = 0;
+            return 0;
         }
     }
-    printf("File not found.\n");
+    return -1;
 }
 
-void writeFile(FileHandle *handle, const void *buffer, int size) {
-    if (handle->block_index == -1) {
-        handle->block_index = fat->file_count - 1;
-        fat->files[handle->block_index].start_block = handle->block_index;
-    }
+ssize_t write_file(FileSystem *fs, FileHandle *fh, const void *data, size_t size) {
+    size_t total_written = 0;
+    while (size > 0) {
+        int block_offset = fh->position % BLOCK_SIZE;
+        int block = fh->block_index;
+        
+        if (block == -1) return -1;
 
-    if (handle->position + size > BLOCK_SIZE) {
-        printf("Not enough space in block to write data.\n");
-        return;
-    }
+        int to_write = BLOCK_SIZE - block_offset;
+        if (to_write > size) to_write = size;
 
-    void *block = data_blocks + handle->block_index * BLOCK_SIZE + handle->position;
-    memcpy(block, buffer, size);
-    handle->position += size;
-    fat->files[handle->block_index].size += size;
-}
+        memcpy(fs->data + block * BLOCK_SIZE + block_offset, data + total_written, to_write);
 
-void readFile(FileHandle *handle, void *buffer, int size) {
-    if (handle->position + size > fat->files[handle->block_index].size) {
-        printf("Read exceeds file size.\n");
-        return;
-    }
+        fh->position += to_write;
+        total_written += to_write;
+        size -= to_write;
 
-    void *block = data_blocks + handle->block_index * BLOCK_SIZE + handle->position;
-    memcpy(buffer, block, size);
-    handle->position += size;
-}
-
-void seekFile(FileHandle *handle, int position) {
-    if (position > fat->files[handle->block_index].size) {
-        printf("Seek position exceeds file size.\n");
-        return;
-    }
-
-    handle->position = position;
-}
-
-void createDir(const char *dirname) {
-    if (fat->dir_count >= MAX_FILES) {
-        printf("Directory limit reached.\n");
-        return;
-    }
-
-    for (int i = 0; i < fat->dir_count; i++) {
-        if (strcmp(fat->dirs[i].name, dirname) == 0) {
-            printf("Directory already exists.\n");
-            return;
-        }
-    }
-
-    strcpy(fat->dirs[fat->dir_count].name, dirname);
-    fat->dirs[fat->dir_count].size = 0;
-    fat->dirs[fat->dir_count].start_block = -1;
-    fat->dir_count++;
-}
-
-void eraseDir(const char *dirname) {
-    for (int i = 0; i < fat->dir_count; i++) {
-        if (strcmp(fat->dirs[i].name, dirname) == 0) {
-            for (int j = i; j < fat->dir_count - 1; j++) {
-                fat->dirs[j] = fat->dirs[j + 1];
+        if (block_offset + to_write == BLOCK_SIZE) {
+            int next_block = fs->fat[block].next_block;
+            if (next_block == 0) {
+                next_block = -1;
+                for (int i = 0; i < fs->num_blocks; i++) {
+                    if (fs->fat[i].next_block == -1) {
+                        next_block = i;
+                        fs->fat[i].next_block = 0;
+                        fs->fat[block].next_block = next_block;
+                        break;
+                    }
+                }
+                if (next_block == -1) return total_written;
             }
-            fat->dir_count--;
-            return;
+            fh->block_index = next_block;
         }
     }
-    printf("Directory not found.\n");
+    return total_written;
 }
 
-void changeDir(const char *dirname) {
-    for (int i = 0; i < fat->dir_count; i++) {
-        if (strcmp(fat->dirs[i].name, dirname) == 0) {
-            fat->current_dir = i;
-            return;
+ssize_t read_file(FileSystem *fs, FileHandle *fh, void *buffer, size_t size) {
+    size_t total_read = 0;
+    while (size > 0) {
+        int block_offset = fh->position % BLOCK_SIZE;
+        int block = fh->block_index;
+        
+        if (block == -1) return total_read;
+
+        int to_read = BLOCK_SIZE - block_offset;
+        if (to_read > size) to_read = size;
+
+        memcpy(buffer + total_read, fs->data + block * BLOCK_SIZE + block_offset, to_read);
+
+        fh->position += to_read;
+        total_read += to_read;
+        size -= to_read;
+
+        if (block_offset + to_read == BLOCK_SIZE) {
+            block = fs->fat[block].next_block;
+            if (block == 0) return total_read;
+            fh->block_index = block;
         }
     }
-    printf("Directory not found.\n");
+    return total_read;
 }
 
-void listDir() {
-    printf("Listing contents of directory: %s\n", fat->dirs[fat->current_dir].name);
-    printf("Directories:\n");
-    for (int i = 0; i < fat->dir_count; i++) {
-        printf("%s/\n", fat->dirs[i].name);
+int seek_file(FileSystem *fs, FileHandle *fh, int32_t position) {
+    int block_index = fh->block_index;
+    while (position >= BLOCK_SIZE) {
+        if (block_index == -1 || fs->fat[block_index].next_block == 0) {
+            return -1;
+        }
+        block_index = fs->fat[block_index].next_block;
+        position -= BLOCK_SIZE;
     }
-    printf("Files:\n");
-    for (int i = 0; i < fat->file_count; i++) {
-        printf("%s\n", fat->files[i].name);
+    fh->block_index = block_index;
+    fh->position = position;
+    return 0;
+}
+
+int create_dir(FileSystem *fs, const char *name) {
+    int first_block = -1;
+    for (int i = 0; i < fs->num_blocks; i++) {
+        if (fs->fat[i].next_block == -1) {
+            first_block = i;
+            fs->fat[i].next_block = 0;
+            break;
+        }
+    }
+    if (first_block == -1) return -1;
+
+    DirectoryEntry *dir = fs->root_dir;
+    for (int i = 0; i < (BLOCK_SIZE - fs->fat_size) / sizeof(DirectoryEntry); i++) {
+        if (dir[i].first_block == 0) {
+            strncpy(dir[i].name, name, MAX_FILENAME_LENGTH);
+            dir[i].is_directory = 1;
+            dir[i].first_block = first_block;
+            return 0;
+        }
+    }
+
+    fs->fat[first_block].next_block = -1;
+    return -1;
+}
+
+int erase_dir(FileSystem *fs, const char *name) {
+    DirectoryEntry *dir = fs->root_dir;
+    for (int i = 0; i < (BLOCK_SIZE - fs->fat_size) / sizeof(DirectoryEntry); i++) {
+        if (dir[i].first_block != 0 && strncmp(dir[i].name, name, MAX_FILENAME_LENGTH) == 0) {
+            if (dir[i].is_directory) {
+                int block = dir[i].first_block;
+                while (block != -1) {
+                    int next_block = fs->fat[block].next_block;
+                    fs->fat[block].next_block = -1;
+                    block = next_block;
+                }
+                dir[i].first_block = 0;
+                return 0;
+            }
+        }
+    }
+    return -1;
+}
+
+int change_dir(FileSystem *fs, const char *path) {
+    DirectoryEntry *dir = fs->root_dir;
+    for (int i = 0; i < (BLOCK_SIZE - fs->fat_size) / sizeof(DirectoryEntry); i++) {
+        if (dir[i].first_block != 0 && strncmp(dir[i].name, path, MAX_FILENAME_LENGTH) == 0) {
+            if (dir[i].is_directory) {
+                fs->root_dir = (DirectoryEntry *)(fs->data + dir[i].first_block * BLOCK_SIZE);
+                return 0;
+            }
+        }
+    }
+    return -1;
+}
+
+void list_dir(FileSystem *fs) {
+    DirectoryEntry *dir = fs->root_dir;
+    for (int i = 0; i < (BLOCK_SIZE - fs->fat_size) / sizeof(DirectoryEntry); i++) {
+        if (dir[i].first_block != 0) {
+            printf("%s%s\n", dir[i].name, dir[i].is_directory ? "/" : "");
+        }
     }
 }
+
