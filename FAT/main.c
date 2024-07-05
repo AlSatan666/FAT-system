@@ -9,7 +9,7 @@ void printMenu() {
     printf("2. eraseFile <filename>\n");
     printf("3. write <filename> <data>\n");
     printf("4. read <filename>\n");
-    printf("5. seek <filename> \n");
+    printf("5. seek <filename>\n");
     printf("6. createDir <dirname>\n");
     printf("7. eraseDir <dirname>\n");
     printf("8. changeDir <dirname>\n");
@@ -29,6 +29,7 @@ int main() {
     fs.root->entries = NULL;
     fs.root->num_entries = 0;
     fs.root->parent = NULL;
+    fs.next_free_position = 0;
 
     // Cre la directory CASA nel quale inizio
     DirectoryEntry casa_entry;
@@ -85,7 +86,7 @@ int main() {
         
         else if (strncmp(command, "seek", 4) == 0) {
             sscanf(command, "seek %s %d", filename);
-            seek(&fs, filename, position);
+            seek(&fs, filename);
         }
         
         else if (strncmp(command, "createDir", 9) == 0) {
