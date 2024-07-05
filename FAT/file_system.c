@@ -216,13 +216,64 @@ void eraseDir(FileSystem* fs, const char* dirname) {
 }
 
 void changeDir(FileSystem* fs, const char* dirname) {
+    printf("Attempting to change directory to: %s\n", dirname);
+    printf("To return to the previous directory, use 'changeDir ..'\n");
+
+    if (strcmp(dirname, "..") == 0) {
+        if (fs->current_directory->parent) {
+            fs->current_directory = fs->current_directory->parent;
+            printf("Successfully changed to the parent directory.\n");
+        } else {
+            printf("\nAlready in the root directory.\n");
+        }
+        return;
+    }
+
+    DirectoryEntry* entries = fs->current_directory->entries;
+    int num_entries = fs->current_directory->num_entries;
+
+    for (int i = 0; i < num_entries; ++i) {
+        if (strcmp(entries[i].name, dirname) == 0 && entries[i].is_dir) {
+            fs->current_directory = entries[i].subdir;
+            printf("Successfully changed directory to: %s\n", dirname);
+            return;
+        }
+    }
+
+    printf("\nDirectory not found.\n");
 }
 
 void listDir(FileSystem* fs) {
+    printf("Attempting to list directories\n");
+    DirectoryEntry* entries = fs->current_directory->entries;
+    int num_entries = fs->current_directory->num_entries;
+
+    printf("Directories:\n");
+    for (int i = 0; i < num_entries; ++i) {
+        if (entries[i].is_dir) {
+            if (entries[i].subdir == fs->current_directory) {
+                printf("- %s (tu sei qui)\n", entries[i].name);
+            } else {
+                printf("- %s\n", entries[i].name);
+            }
+        }
+    }
+    printf("Successfully listed directories\n");
 }
-   
+
 void listFiles(FileSystem* fs) {
-}    
+    printf("Attempting to list files\n");
+    DirectoryEntry* entries = fs->current_directory->entries;
+    int num_entries = fs->current_directory->num_entries;
+
+    printf("Files:\n");
+    for (int i = 0; i < num_entries; ++i) {
+        if (!entries[i].is_dir) {
+            printf("- %s\n", entries[i].name);
+        }
+    }
+    printf("Successfully listed files\n");
+}
 
 void printCurrentDir(FileSystem* fs) {
     Directory* dir = fs->current_directory;
