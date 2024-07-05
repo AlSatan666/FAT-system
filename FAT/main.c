@@ -30,6 +30,9 @@ int main() {
     fs.root->num_entries = 0;
     fs.root->parent = NULL;
     fs.next_free_position = 0;
+    fs.free_positions = NULL;
+    fs.num_free_positions = 0; 
+
 
     // Cre la directory CASA nel quale inizio
     DirectoryEntry casa_entry;
@@ -133,6 +136,7 @@ int main() {
     free(fs.buffer);
     free(fs.root->entries);
     free(fs.root);
+    free(fs.free_positions);
 
     return 0;
 }
