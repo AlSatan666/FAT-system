@@ -4,6 +4,10 @@
 #include <string.h>
 
 void createFile(FileSystem* fs, const char* filename) {
+    printf("Attempting to create file: %s\n", filename);
+    DirectoryEntry* entries = fs->current_directory->entries;
+    int num_entries = fs->current_directory->num_entries;
+    
     int position = -1;
     for (int i = 0; i < fs->buffer_size; i += MAX_FILE_SIZE) {
         int is_free = 1;
