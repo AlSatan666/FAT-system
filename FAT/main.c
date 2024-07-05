@@ -9,7 +9,7 @@ void printMenu() {
     printf("2. eraseFile <filename>\n");
     printf("3. write <filename> <data>\n");
     printf("4. read <filename>\n");
-    printf("5. seek <filename> <position>\n");
+    printf("5. seek <filename> \n");
     printf("6. createDir <dirname>\n");
     printf("7. eraseDir <dirname>\n");
     printf("8. changeDir <dirname>\n");
@@ -84,7 +84,7 @@ int main() {
         }
         
         else if (strncmp(command, "seek", 4) == 0) {
-            sscanf(command, "seek %s %d", filename, &position);
+            sscanf(command, "seek %s %d", filename);
             seek(&fs, filename, position);
         }
         
