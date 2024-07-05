@@ -15,14 +15,22 @@ void createFile(FileSystem* fs, const char* filename) {
         }
     }
 
-    if (fs->next_free_position + MAX_FILE_SIZE > fs->buffer_size) {
+    int position = -1;
+    if (fs->num_free_positions > 0) {
+        // Usa uno degli spazi liberi
+        position = fs->free_positions[--fs->num_free_positions];
+    } else if (fs->next_free_position + MAX_FILE_SIZE <= fs->buffer_size) {
+        // Usa la prossima posizione libera
+        position = fs->next_free_position;
+        fs->next_free_position += MAX_FILE_SIZE;
+    } else {
         printf("\nNo free space available.\n");
         return;
     }
 
     DirectoryEntry new_entry;
     strcpy(new_entry.name, filename);
-    new_entry.position = fs->next_free_position;
+    new_entry.position = position;
     new_entry.is_dir = 0;
     new_entry.subdir = NULL;
 
@@ -35,7 +43,6 @@ void createFile(FileSystem* fs, const char* filename) {
 
     fs->current_directory->entries = entries;
     fs->current_directory->num_entries++;
-    fs->next_free_position += MAX_FILE_SIZE;
     printf("Successfully created file: %s\n", filename);
 }
   
@@ -48,6 +55,9 @@ void eraseFile(FileSystem* fs, const char* filename) {
     for (int i = 0; i < num_entries; ++i) {
         if (strcmp(entries[i].name, filename) == 0 && !entries[i].is_dir) {
             memset(fs->buffer + entries[i].position, 0, MAX_FILE_SIZE);
+
+            fs->free_positions = realloc(fs->free_positions, (fs->num_free_positions + 1) * sizeof(int));
+            fs->free_positions[fs->num_free_positions++] = entries[i].position;
 
             memmove(&entries[i], &entries[i + 1], (num_entries - i - 1) * sizeof(DirectoryEntry));
             entries = realloc(entries, (num_entries - 1) * sizeof(DirectoryEntry));
