@@ -25,6 +25,8 @@ typedef struct {
     Directory* root;
     Directory* current_directory;
     int next_free_position;
+    int* free_positions;
+    int num_free_positions;
 } FileSystem;
 
 void createFile(FileSystem* fs, const char* filename);
