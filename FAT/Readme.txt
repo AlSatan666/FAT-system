@@ -6,6 +6,4 @@ step for work:
 
 -open terminal
 
--   gcc -o main main.c file_system.c
-
--  ./main
+???
