@@ -130,10 +130,90 @@ void seek(FileSystem* fs, const char* filename) {
 
 void createDir(FileSystem* fs, const char* dirname) {
     printf("Attempting to create directory: %s\n", dirname);
-}   
+    DirectoryEntry* entries = fs->current_directory->entries;
+    int num_entries = fs->current_directory->num_entries;
+
+    for (int i = 0; i < num_entries; ++i) {
+        if (strcmp(entries[i].name, dirname) == 0) {
+            printf("\nDirectory already exists.\n");
+            return;
+        }
+    }
+
+    DirectoryEntry new_entry;
+    strcpy(new_entry.name, dirname);
+    new_entry.is_dir = 1;
+    new_entry.subdir = malloc(sizeof(Directory));
+    if (new_entry.subdir == NULL) {
+        printf("\nMemory allocation failed.\n");
+        return;
+    }
+    new_entry.subdir->entries = NULL;
+    new_entry.subdir->num_entries = 0;
+    new_entry.subdir->parent = fs->current_directory;
+
+    entries = realloc(entries, (num_entries + 1) * sizeof(DirectoryEntry));
+    if (entries == NULL) {
+        printf("\nMemory allocation failed.\n");
+        free(new_entry.subdir);
+        return;
+    }
+    entries[num_entries] = new_entry;
+
+    fs->current_directory->entries = entries;
+    fs->current_directory->num_entries++;
+    printf("Successfully created directory: %s\n", dirname);
+}
+
+void eraseDirRecursive(Directory* dir) {
+    for (int i = 0; i < dir->num_entries; ++i) {
+        if (dir->entries[i].is_dir) {
+            eraseDirRecursive(dir->entries[i].subdir);
+            free(dir->entries[i].subdir);
+        }
+    }
+    free(dir->entries);
+}
 
 void eraseDir(FileSystem* fs, const char* dirname) {
-}   
+    printf("Attempting to erase directory: %s\n", dirname);
+    DirectoryEntry* entries = fs->current_directory->entries;
+    int num_entries = fs->current_directory->num_entries;
+
+    for (int i = 0; i < num_entries; ++i) {
+        if (strcmp(entries[i].name, dirname) == 0 && entries[i].is_dir) {
+            if (entries[i].subdir->num_entries > 0) {
+                char response[4];//(usa 4 array per memorizzare il yes/n )
+                printf("\nDirectory is not empty. Do you want to delete and all its files? (yes/no): ");
+                fgets(response, sizeof(response), stdin);
+                response[strcspn(response, "\n")] = 0;
+
+                if (strcmp(response, "yes") == 0) {
+                    eraseDirRecursive(entries[i].subdir);
+                } else {
+                    printf("\nOperation cancelled.\n");
+                    return;
+                }
+            }
+
+            free(entries[i].subdir);
+
+            memmove(&entries[i], &entries[i + 1], (num_entries - i - 1) * sizeof(DirectoryEntry));
+            entries = realloc(entries, (num_entries - 1) * sizeof(DirectoryEntry));
+            if (entries == NULL && num_entries > 1) {
+                printf("\nMemory reallocation failed.\n");
+                return;
+            }
+
+            fs->current_directory->entries = entries;
+            fs->current_directory->num_entries--;
+            printf("Successfully erase directory: %s\n", dirname);
+            return;
+        }
+    }
+
+    printf("\nDirectory not found.\n");
+}
 
 void changeDir(FileSystem* fs, const char* dirname) {
 }
@@ -145,4 +225,20 @@ void listFiles(FileSystem* fs) {
 }    
 
 void printCurrentDir(FileSystem* fs) {
- }
+    Directory* dir = fs->current_directory;
+    char path[1024] = "";
+    while (dir != fs->root) {
+        DirectoryEntry* parent_entries = dir->parent->entries;
+        for (int i = 0; i < dir->parent->num_entries; ++i) {
+            if (parent_entries[i].is_dir && parent_entries[i].subdir == dir) {
+                char temp[1024];
+                snprintf(temp, sizeof(temp), "/%s%s", parent_entries[i].name, path);
+                strcpy(path, temp);
+                break;
+            }
+        }
+        dir = dir->parent;
+    }
+    printf("Current Directory: %s\n", path);
+}
+
