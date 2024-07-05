@@ -24,6 +24,7 @@ typedef struct {
     int buffer_size;
     Directory* root;
     Directory* current_directory;
+    int next_free_position;
 } FileSystem;
 
 void createFile(FileSystem* fs, const char* filename);
