@@ -4,19 +4,19 @@
 #define MAX_FILENAME_LENGTH 256
 #define MAX_FILE_SIZE 1024
 
-typedef struct Directory Directory;
+typedef struct Directory Directory;//autoreferenziale
 
 typedef struct DirectoryEntry {
     char name[MAX_FILENAME_LENGTH];
     int position;
     int is_dir; // Flag per directory
-    Directory* subdir; // Puntatore alle subdiretory(ricorda)
+    Directory* subdir; // Puntatore alle subdiretory
 } DirectoryEntry;
 
 struct Directory {
     DirectoryEntry* entries;
     int num_entries;
-    Directory* parent; //vedi sopra
+    Directory* parent; //Puntatore alle diretory
 };
 
 typedef struct {
