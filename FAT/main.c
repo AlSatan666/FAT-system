@@ -16,6 +16,13 @@ int main() {
     }
     printf("File created successfully.\n");
 
+    // Erase the file
+    if (erase_file("testfile.txt") != 0) {
+        fprintf(stderr, "Failed to erase file.\n");
+        return 1;
+    }
+    printf("File erased successfully.\n");
+
     // Uninitialize file system
     uninitialize_fs();
 
