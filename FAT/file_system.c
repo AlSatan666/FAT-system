@@ -89,6 +89,31 @@ int create_file(const char *filename) {
     return -1;  // No space left in root directory
 }
 
+int erase_file(const char *filename) {
+    int root_dir_entries = (fs_size - BLOCK_SIZE) / sizeof(FileEntry);
+
+    // Find the file
+    for (int i = 0; i < root_dir_entries; i++) {
+        if (strncmp(root_dir[i].name, filename, MAX_FILENAME_LENGTH) == 0) {
+            // Free FAT blocks
+            uint32_t current_block = root_dir[i].first_block;
+            while (current_block != 0xFFFFFFFF) {
+                uint32_t next_block = fat[current_block];
+                fat[current_block] = 0xFFFFFFFF;
+                current_block = next_block;
+            }
+
+            // Clear directory entry
+            memset(&root_dir[i], 0, sizeof(FileEntry));
+            printf("File erased: %s\n", filename);
+            return 0;
+        }
+    }
+
+    printf("File not found: %s\n", filename);
+    return -1;  // File not found
+}
+
 void uninitialize_fs() {
     if (fs_base != NULL) {
         munmap(fs_base, fs_size);
