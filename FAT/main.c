@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "file_system.h"
 
 int main() {
@@ -16,6 +17,14 @@ int main() {
     }
     printf("File created successfully.\n");
 
+    // Write to the file
+    const char *data = "Hello, FAT file system!";
+    if (write_file("testfile.txt", 0, data, strlen(data)) != 0) {
+        fprintf(stderr, "Failed to write to file.\n");
+        return 1;
+    }
+    printf("Data written to file successfully.\n");
+
     // Erase the file
     if (erase_file("testfile.txt") != 0) {
         fprintf(stderr, "Failed to erase file.\n");
@@ -28,3 +37,4 @@ int main() {
 
     return 0;
 }
+
