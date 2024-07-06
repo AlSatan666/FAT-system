@@ -1,30 +1,23 @@
 #include <stdio.h>
-#include <string.h>
-#include <sys/mman.h>
-#include <unistd.h>
 #include "file_system.h"
 
 int main() {
-    FileSystem fs;
-    initialize_filesystem(&fs, "filesystem.dat", 1024);
+    // Initialize file system
+    if (initialize_fs("filesystem.img", 1024 * 1024) != 0) {
+        fprintf(stderr, "Failed to initialize file system.\n");
+        return 1;
+    }
+    printf("File system initialized.\n");
 
-    create_file(&fs, "test.txt");
+    // Create a file
+    if (create_file("testfile.txt") != 0) {
+        fprintf(stderr, "Failed to create file.\n");
+        return 1;
+    }
+    printf("File created successfully.\n");
 
-    FileHandle fh = {fs.root_dir[0].first_block, 0};
-    const char *data = "Hello, World!";
-    write_file(&fs, &fh, data, strlen(data));
+    // Uninitialize file system
+    uninitialize_fs();
 
-    char buffer[20];
-    fh.position = 0;
-    read_file(&fs, &fh, buffer, strlen(data));
-    buffer[strlen(data)] = '\0';
-    printf("Read data: %s\n", buffer);
-
-    create_dir(&fs, "docs");
-    change_dir(&fs, "docs");
-    list_dir(&fs);
-
-    munmap(fs.data, fs.num_blocks * BLOCK_SIZE);
-    close(fs.fd);
     return 0;
 }
