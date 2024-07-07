@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-
+// Variabili globali
 FileSystem *fs;
 DirectoryEntry *current_dir;
 int *fat_table;
@@ -181,10 +181,17 @@ int create_file(const char* name, const char* ext, int size, const char* data) {
         return FILE_CREATE_ERROR;
     }
 
+    memset(entry->name, ' ', sizeof(entry->name));
+    memset(entry->extension, ' ', sizeof(entry->extension));
+
     strncpy(entry->name, name, 8);
+    entry->name[7] = '\0';
     strncpy(entry->extension, ext, 3);
+    entry->extension[3] = '\0';
     entry->size = size;
     entry->is_dir = 0;
+
+    printf("create_file: Creating file %.8s.%.3s\n", entry->name, entry->extension);
 
     int cluster = get_free_cluster();
     if (cluster == FAT_FULL) {
@@ -212,30 +219,54 @@ int create_file(const char* name, const char* ext, int size, const char* data) {
     fseek(fat_file, sizeof(FileSystem), SEEK_SET);
     fwrite(fat_table, fs->fat_size, 1, fat_file);
 
+    printf("create_file: File %.8s.%.3s created successfully\n", entry->name, entry->extension);
+
     return 0;
 }
 
 DirectoryEntry* locate_file(const char* name, const char* ext, char is_dir) {
     int cluster = current_dir->first_cluster;
+    printf("locate_file: Searching for %s.%s in directory %s\n", name, ext, current_dir->name);
     while (cluster != FAT_END) {
         DirectoryEntry* dir = (DirectoryEntry*)&data_blocks[cluster * fs->cluster_size];
         for (int i = 0; i < fs->cluster_size / sizeof(DirectoryEntry); i++) {
             DirectoryEntry* entry = &dir[i];
-            if (strcmp(entry->name, name) == 0 && strcmp(entry->extension, ext) == 0 && entry->is_dir == is_dir) {
+            printf("locate_file: Checking entry %.8s.%.3s\n", entry->name, entry->extension);
+            if (strncmp(entry->name, name, 8) == 0 && strncmp(entry->extension, ext, 3) == 0 && entry->is_dir == is_dir) {
+                printf("locate_file: Found %.8s.%.3s\n", name, ext);
                 return entry;
             }
         }
         cluster = fat_table[cluster];
     }
+    printf("locate_file: %s.%s not found\n", name, ext);
     return NULL;
 }
 
+int is_directory_empty(DirectoryEntry* dir) {
+    int cluster = dir->first_cluster;
+    while (cluster != FAT_END) {
+        DirectoryEntry* d = (DirectoryEntry*)&data_blocks[cluster * fs->cluster_size];
+        for (int i = 0; i < fs->cluster_size / sizeof(DirectoryEntry); i++) {
+            DirectoryEntry* entry = &d[i];
+            if (entry->name[0] != 0x00 && (unsigned char)entry->name[0] != DELETED_ENTRY && strcmp(entry->name, ".") != 0 && strcmp(entry->name, "..") != 0) {
+                return 0; // Non vuota
+            }
+        }
+        cluster = fat_table[cluster];
+    }
+    return 1; // Vuota
+}
+
 int remove_file(const char* name, const char* ext) {
+    printf("Attempting to remove file: %s.%s\n", name, ext);
     DirectoryEntry* file = locate_file(name, ext, 0);
     if (file == NULL) {
+        printf("File not found: %s.%s\n", name, ext);
         return FILE_NOT_FOUND;
     }
 
+    printf("Removing file: %s.%s\n", name, ext);
     int current_cluster = file->first_cluster;
     while (current_cluster != FAT_END) {
         memset(&data_blocks[current_cluster * fs->cluster_size], 0x00, fs->cluster_size);
@@ -251,6 +282,7 @@ int remove_file(const char* name, const char* ext) {
     fseek(fat_file, sizeof(FileSystem), SEEK_SET);
     fwrite(fat_table, fs->fat_size, 1, fat_file);
 
+    printf("File removed: %s.%s\n", name, ext);
     return 0;
 }
 
@@ -272,28 +304,16 @@ int remove_empty_dir(DirectoryEntry* dir) {
     return 0;
 }
 
-bool is_dir_empty(DirectoryEntry* dir) {
-    int cluster = dir->first_cluster;
-    while (cluster != FAT_END) {
-        DirectoryEntry* d = (DirectoryEntry*)&data_blocks[cluster * fs->cluster_size];
-        for (int i = 0; i < fs->cluster_size / sizeof(DirectoryEntry); i++) {
-            DirectoryEntry* entry = &d[i];
-            if (entry->name[0] != 0x00 && (unsigned char)entry->name[0] != DELETED_ENTRY && strcmp(entry->name, ".") != 0 && strcmp(entry->name, "..") != 0) {
-                return false;
-            }
-        }
-        cluster = fat_table[cluster];
-    }
-    return true;
-}
-
 int remove_dir(const char* name, int recursive) {
+    printf("Attempting to remove directory: %s\n", name);
     DirectoryEntry* dir = locate_file(name, "", 1);
     if (dir == NULL) {
+        printf("Directory not found: %s\n", name);
         return FILE_NOT_FOUND;
     }
 
-    if (is_dir_empty(dir)) {
+    if (is_directory_empty(dir)) {
+        printf("Directory is empty: %s\n", name);
         return remove_empty_dir(dir);
     } else if (recursive == 1) {
         DirectoryEntry* temp = current_dir;
@@ -319,8 +339,10 @@ int remove_dir(const char* name, int recursive) {
         }
 
         current_dir = temp;
+        printf("Directory removed: %s\n", name);
         return remove_empty_dir(dir);
     } else {
+        printf("Directory not empty and recursive flag not set: %s\n", name);
         return DIR_NOT_EMPTY;
     }
 }
@@ -353,5 +375,66 @@ int read_file_content(const char* name, const char* ext, char* buffer) {
         current_cluster = fat_table[current_cluster];
     }
     return bytes_read;
+}
+
+int write_file_content(const char* name, const char* ext, const char* data, int offset, int size) {
+    DirectoryEntry* file = locate_file(name, ext, 0);
+    if (file == NULL) {
+        return FILE_NOT_FOUND;
+    }
+
+    if (offset == -1) {
+        offset = file->size;
+    }
+
+    int current_cluster = file->first_cluster;
+    int cluster_size = fs->cluster_size;
+    int clusters_to_skip = offset / cluster_size;
+    int byte_offset = offset % cluster_size;
+
+    printf("write_file_content: Writing to %s.%s at offset %d, size %d\n", name, ext, offset, size);
+    printf("write_file_content: clusters_to_skip %d, byte_offset %d\n", clusters_to_skip, byte_offset);
+
+    for (int i = 0; i < clusters_to_skip; i++) {
+        current_cluster = fat_table[current_cluster];
+        if (current_cluster == FAT_END) {
+            return FILE_WRITE_ERROR; // Trying to write beyond the end of the file
+        }
+    }
+
+    int bytes_written = 0;
+    while (size > 0 && current_cluster != FAT_END) {
+        int bytes_to_write = (size + byte_offset > cluster_size) ? cluster_size - byte_offset : size;
+        printf("write_file_content: Writing %d bytes at cluster %d, byte offset %d\n", bytes_to_write, current_cluster, byte_offset);
+        memcpy(&data_blocks[current_cluster * cluster_size + byte_offset], data + bytes_written, bytes_to_write);
+
+        size -= bytes_to_write;
+        bytes_written += bytes_to_write;
+        byte_offset = 0;
+
+        if (size > 0) {
+            int next_cluster = fat_table[current_cluster];
+            if (next_cluster == FAT_END) {
+                next_cluster = get_free_cluster();
+                if (next_cluster == FAT_FULL) {
+                    return FILE_WRITE_ERROR; // No more space left in the file system
+                }
+                fat_table[current_cluster] = next_cluster;
+                fat_table[next_cluster] = FAT_END;
+            }
+            current_cluster = next_cluster;
+        }
+    }
+
+    file->size = offset + bytes_written > file->size ? offset + bytes_written : file->size;
+
+    fseek(data_file, 0, SEEK_SET);
+    fwrite(data_blocks, fs->data_size, 1, data_file);
+    fseek(fat_file, sizeof(FileSystem), SEEK_SET);
+    fwrite(fat_table, fs->fat_size, 1, fat_file);
+
+    printf("write_file_content: Total bytes written %d\n", bytes_written);
+
+    return bytes_written;
 }
 
