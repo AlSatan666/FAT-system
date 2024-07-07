@@ -19,9 +19,7 @@
 #define FILE_READ_ERROR -5
 #define DIR_NOT_EMPTY -6
 #define FAT_FULL -7
-
-#include <stdint.h>
-#include <stdbool.h>
+#define FILE_WRITE_ERROR -8 
 
 typedef struct {
     int bytes_per_block;
@@ -42,6 +40,11 @@ typedef struct DirectoryEntry {
     int entry_count;
 } __attribute__((packed)) DirectoryEntry;
 
+typedef struct FileHandle {
+    DirectoryEntry* file_entry;
+    int position;
+} FileHandle;
+
 int fs_initialize(const char* fat_path, const char* data_path);
 DirectoryEntry* get_current_dir();
 FileSystem* get_fs();
@@ -58,5 +61,5 @@ bool is_dir_empty(DirectoryEntry* dir);
 int remove_dir(const char* name, int recursive);
 void display_fs_image(unsigned int max_bytes);
 int read_file_content(const char* name, const char* ext, char* buffer);
-
+int write_file_content(const char* name, const char* ext, const char* data, int offset, int size);
 #endif
