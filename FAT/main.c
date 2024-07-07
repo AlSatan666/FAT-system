@@ -65,14 +65,14 @@ void test_write_read_file() {
     if (res == 0) {
         printf("File 'WRITE.TXT' created successfully.\n");
     } else {
-        printf("Error creating file 'WRITEFILE.TXT'.\n");
+        printf("Error creating file 'WRITE.TXT'.\n");
     }
 
     char buffer[20];
-    int bytes_read = read_file_content("WRITEFILE", "TXT", buffer);
+    int bytes_read = read_file_content("WRITE", "TXT", buffer);
     if (bytes_read == 17) {
         buffer[bytes_read] = '\0';
-        printf("Read from 'WRITEFILE.TXT': %s\n", buffer);
+        printf("Read from 'WRITE.TXT': %s\n", buffer);
     } else {
         printf("Error reading file 'WRITEFILE.TXT'.\n");
     }
@@ -81,9 +81,9 @@ void test_write_read_file() {
 void test_seek_file() {
     printf("\nRunning test: seek_file\n");
     FileHandle file_handle;
-    file_handle.file_entry = locate_file("WRITEFILE", "TXT", 0);
+    file_handle.file_entry = locate_file("WRITE", "TXT", 0);
     if (file_handle.file_entry == NULL) {
-        printf("File 'WRITEFILE.TXT' not found.\n");
+        printf("File 'WRITE.TXT' not found.\n");
         return;
     }
     file_handle.position = 5;
@@ -122,18 +122,18 @@ void test_erase_dir() {
 
 void test_change_dir() {
     printf("\nRunning test: change_dir\n");
-    int res = create_dir("DIRCHANGE");
+    int res = create_dir("DIRCHANG");
     if (res == 0) {
-        printf("Directory 'DIRCHANGE' created successfully.\n");
+        printf("Directory 'DIRCHANG' created successfully.\n");
     } else {
-        printf("Error creating directory 'DIRCHANGE'.\n");
+        printf("Error creating directory 'DIRCHANG'.\n");
     }
 
-    res = cd("DIRCHANGE");
+    res = cd("DIRCHANG");
     if (res == 0) {
-        printf("Changed to directory 'DIRCHANGE' successfully.\n");
+        printf("Changed to directory 'DIRCHANG' successfully.\n");
     } else {
-        printf("Error changing to directory 'DIRCHANGE'.\n");
+        printf("Error changing to directory 'DIRCHANG'.\n");
     }
 
     res = cd("..");
@@ -149,5 +149,4 @@ void test_list_dir() {
     printf("Contents of root directory:\n");
     ls();
 }
-
 
