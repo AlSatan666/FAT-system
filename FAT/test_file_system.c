@@ -2,8 +2,8 @@
 #include <string.h>
 #include "file_system.h"
 
-#define FAT_FILE "test_fat_file.dat"
-#define DATA_FILE "test_data_file.dat"
+#define FAT_FILE "main_fat_file.dat"
+#define DATA_FILE "main_data_file.dat"
 
 void test_fs_initialize() {
     int res = fs_initialize(FAT_FILE, DATA_FILE);
