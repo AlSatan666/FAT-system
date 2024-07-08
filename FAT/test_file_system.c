@@ -5,7 +5,6 @@
 #define FAT_FILE "test_fat_file.dat"
 #define DATA_FILE "test_data_file.dat"
 
-
 void test_fs_initialize() {
     int res = fs_initialize(FAT_FILE, DATA_FILE);
     if (res == 0) {
@@ -77,9 +76,7 @@ void test_remove_dir() {
 
 void test_write_file() {
     printf("\nRunning test: write_file\n");
-
-   
-    char additional_content[20] = "spazio sprecato";
+    char additional_content[] = "spazio sprecato";
     printf("test_write_file: Writing 'spazio sprecato' to 'TEST.TXT' at the end\n");
     int bytes_written = write_file_content("TEST", "TXT", additional_content, -1, 15);
     if (bytes_written == 15) {
@@ -91,8 +88,17 @@ void test_write_file() {
 
 void test_read_file(const char* name, const char* ext) {
     printf("\nRunning test: read_file\n");
+
+    FileHandle file_handle;
+    file_handle.file_entry = locate_file(name, ext, 0);
+    if (file_handle.file_entry == NULL) {
+        printf("File '%s.%s' not found.\n", name, ext);
+        return;
+    }
+    file_handle.position = 0;
+
     char buffer[50];
-    int bytes_read = read_file_content(name, ext, buffer);
+    int bytes_read = read_file_content(&file_handle, buffer, sizeof(buffer) - 1);
     if (bytes_read > 0) {
         buffer[bytes_read] = '\0';
         printf("Read from '%s.%s': %s\n", name, ext, buffer);
@@ -101,19 +107,73 @@ void test_read_file(const char* name, const char* ext) {
     }
 }
 
-int main(int argc, char** argv) {
-    test_fs_initialize();
-    test_create_dir();
-    test_create_file();
-    test_read_file("TEST", "TXT");
-    test_write_file();
-    test_read_file("TEST", "TXT");
-    test_ls();
-    test_cd();
-    test_ls();
-    test_cd_root();
-    test_remove_file();
-    test_remove_dir();
-    return 0;
+void test_seek_file() {
+    printf("\nRunning test: seek_file\n");
+
+    FileHandle file_handle;
+    file_handle.file_entry = locate_file("TEST", "TXT", 0);
+    if (file_handle.file_entry == NULL) {
+        printf("File 'TEST.TXT' not found.\n");
+        return;
+    }
+    file_handle.position = 0;
+
+
+    int res = seek_file(&file_handle, 5, SEEK_SET);
+    if (res == 0) {
+        printf("Seek to position 5 in 'TEST.TXT' successful. Current position: %d\n", file_handle.position);
+    } else {
+        printf("Seek to position 5 in 'TEST.TXT' failed.\n");
+    }
+
+    
+    char buffer[40];
+    memset(buffer, 0, sizeof(buffer));
+    int bytes_read = read_file_content(&file_handle, buffer, sizeof(buffer));
+    buffer[bytes_read] = '\0';
+    printf("Reading from position %d in 'TEST.TXT': %s\n", file_handle.position, buffer);
+
+
+    res = seek_file(&file_handle, 3, SEEK_CUR);
+    if (res == 0) {
+        printf("Seek forward by 3 in 'TEST.TXT' successful. Current position: %d\n", file_handle.position);
+    } else {
+        printf("Seek forward by 3 in 'TEST.TXT' failed.\n");
+    }
+
+
+    memset(buffer, 0, sizeof(buffer));
+    bytes_read = read_file_content(&file_handle, buffer, sizeof(buffer));
+    buffer[bytes_read] = '\0';
+    printf("Reading from position %d in 'TEST.TXT': %s\n", file_handle.position, buffer);
+
+   
+    res = seek_file(&file_handle, -2, SEEK_CUR);
+    if (res == 0) {
+        printf("Seek backward by 2 in 'TEST.TXT' successful. Current position: %d\n", file_handle.position);
+    } else {
+        printf("Seek backward by 2 in 'TEST.TXT' failed.\n");
+    }
+
+    
+    memset(buffer, 0, sizeof(buffer));
+    bytes_read = read_file_content(&file_handle, buffer, sizeof(buffer));
+    buffer[bytes_read] = '\0';
+    printf("Reading from position %d in 'TEST.TXT': %s\n", file_handle.position, buffer);
+
+
+    res = seek_file(&file_handle, 0, SEEK_END);
+    if (res == 0) {
+        printf("Seek to end of 'TEST.TXT' successful. Current position: %d\n", file_handle.position);
+    } else {
+        printf("Seek to end of 'TEST.TXT' failed.\n");
+    }
+    
+    memset(buffer, 0, sizeof(buffer));
+    bytes_read = read_file_content(&file_handle, buffer, sizeof(buffer));
+    buffer[bytes_read] = '\0';
+    printf("Reading from position %d in 'TEST.TXT': %s\n", file_handle.position, buffer);
 }
+
+
 
