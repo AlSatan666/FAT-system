@@ -1,6 +1,8 @@
+#include <stdint.h>
+#include <stdbool.h>
+
 #ifndef FILE_SYSTEM_H
 #define FILE_SYSTEM_H
-
 #define BLOCK_SIZE 512
 #define BLOCKS_PER_CLUSTER 1
 #define TOTAL_BLOCKS 65536
@@ -19,7 +21,7 @@
 #define FILE_READ_ERROR -5
 #define DIR_NOT_EMPTY -6
 #define FAT_FULL -7
-#define FILE_WRITE_ERROR -8 
+#define FILE_WRITE_ERROR -8
 
 typedef struct {
     int bytes_per_block;
@@ -28,10 +30,11 @@ typedef struct {
     int fat_size;
     int data_size;
     int total_blocks;
+    char current_directory[25];
 } FileSystem;
 
 typedef struct DirectoryEntry {
-    char name[8];
+    char name[25];
     char extension[3];
     char is_dir;
     struct DirectoryEntry* parent;
@@ -39,6 +42,7 @@ typedef struct DirectoryEntry {
     int size;
     int entry_count;
 } __attribute__((packed)) DirectoryEntry;
+
 
 typedef struct FileHandle {
     DirectoryEntry* file_entry;
@@ -60,6 +64,9 @@ int remove_empty_dir(DirectoryEntry* dir);
 bool is_dir_empty(DirectoryEntry* dir);
 int remove_dir(const char* name, int recursive);
 void display_fs_image(unsigned int max_bytes);
-int read_file_content(const char* name, const char* ext, char* buffer);
+int read_file_content(FileHandle *handle, char *buffer, int size);
 int write_file_content(const char* name, const char* ext, const char* data, int offset, int size);
+int seek_file(FileHandle *handle, int offset, int origin);
+
 #endif
+
