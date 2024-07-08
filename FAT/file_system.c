@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-// Variabili globali
+//variabili globali
 FileSystem *fs;
 DirectoryEntry *current_dir;
 int *fat_table;
@@ -27,6 +27,7 @@ int fs_initialize(const char* fat_path, const char* data_path) {
     fs->fat_entries = (fs->total_blocks) * fs->bytes_per_block / fs->cluster_size;
     fs->fat_size = fs->fat_entries * 4;
     fs->data_size = (fs->total_blocks - (fs->fat_size / fs->bytes_per_block)) * fs->bytes_per_block - sizeof(FileSystem);
+    strcpy(fs->current_directory, "ROOT"); // Inizializza il nome della directory corrente come ROOT
 
     fat_table = (int*)malloc(fs->fat_size);
     memset(fat_table, FAT_UNUSED, fs->fat_size);
@@ -50,13 +51,19 @@ int fs_initialize(const char* fat_path, const char* data_path) {
     return 0;
 }
 
+
+
 DirectoryEntry* get_current_dir() {
     return current_dir;
 }
 
+
+
 FileSystem* get_fs() {
     return fs;
 }
+
+
 
 int get_free_cluster() {
     for (int i = 1; i < fs->fat_entries; i++) {
@@ -66,6 +73,8 @@ int get_free_cluster() {
     }
     return FAT_FULL;
 }
+
+
 
 DirectoryEntry* find_empty_dir_entry() {
     int cluster = current_dir->first_cluster;
@@ -82,38 +91,40 @@ DirectoryEntry* find_empty_dir_entry() {
     return NULL;
 }
 
+
+
 int cd(const char* dir_name) {
     printf("Changing to directory: %s\n", dir_name);
+    if (strcmp(dir_name, "..") == 0) {
+        if (current_dir->parent != NULL) {
+            current_dir = current_dir->parent;
+            strcpy(fs->current_directory, current_dir->name); // Aggiorna il nome della directory corrente
+        }
+        return 0;
+    }
+
     int cluster = current_dir->first_cluster;
     while (cluster != FAT_END) {
         DirectoryEntry* dir = (DirectoryEntry*)&data_blocks[cluster * fs->cluster_size];
         for (int i = 0; i < fs->cluster_size / sizeof(DirectoryEntry); i++) {
             DirectoryEntry* entry = &dir[i];
-            if (strcmp(entry->name, dir_name) == 0) {
-                if (entry->is_dir) {
-                    printf("Found directory: %s\n", dir_name);
-                    if (strcmp(dir_name, "..") == 0) {
-                        current_dir = current_dir->parent;
-                    } else {
-                        current_dir = (DirectoryEntry*)&data_blocks[entry->first_cluster * fs->cluster_size];
-                        current_dir->parent = dir;
-                    }
-                    return 0;
-                } else {
-                    printf("%s is not a directory\n", dir_name);
-                    return FILE_NOT_FOUND;
-                }
+            if (strcmp(entry->name, dir_name) == 0 && entry->is_dir) {
+                current_dir = (DirectoryEntry*)&data_blocks[entry->first_cluster * fs->cluster_size];
+                current_dir->parent = dir;
+                strcpy(fs->current_directory, entry->name); // Aggiorna il nome della directory corrente
+                return 0;
             }
         }
         cluster = fat_table[cluster];
     }
-    printf("Directory %s not found\n", dir_name);
     return FILE_NOT_FOUND;
 }
 
+
+
 void ls() {
     int cluster = current_dir->first_cluster;
-    printf("Contents of directory (%s):\n", current_dir->name);
+    printf("Contents of directory (%s):\n", fs->current_directory); // Stampa il nome della directory corrente
     while (cluster != FAT_END) {
         DirectoryEntry* dir = (DirectoryEntry*)&data_blocks[cluster * fs->cluster_size];
         for (int i = 0; i < fs->cluster_size / sizeof(DirectoryEntry); i++) {
@@ -125,9 +136,9 @@ void ls() {
                 continue;
             }
             if (entry->is_dir) {
-                printf("%.8s/\t", entry->name);
+                printf("%.25s/\t", entry->name); // Aggiornato per mostrare nomi fino a 25 caratteri
             } else {
-                printf("%.8s.%.3s\t", entry->name, entry->extension);
+                printf("%.25s.%.3s\t", entry->name, entry->extension); // Aggiornato per mostrare nomi fino a 25 caratteri
             }
         }
         cluster = fat_table[cluster];
@@ -135,13 +146,17 @@ void ls() {
     printf("\n");
 }
 
+
+
 int create_dir(const char* name) {
     DirectoryEntry* entry = find_empty_dir_entry();
     if (entry == NULL) {
         return DIR_CREATE_ERROR;
     }
 
-    strncpy(entry->name, name, 8);
+    memset(entry->name, ' ', sizeof(entry->name));
+    strncpy(entry->name, name, 24);
+    entry->name[24] = '\0';
     entry->size = 0;
     entry->is_dir = 1;
 
@@ -172,8 +187,12 @@ int create_dir(const char* name) {
     fseek(fat_file, sizeof(FileSystem), SEEK_SET);
     fwrite(fat_table, fs->fat_size, 1, fat_file);
 
+    printf("Directory created: %s\n", entry->name);
+
     return 0;
 }
+
+
 
 int create_file(const char* name, const char* ext, int size, const char* data) {
     DirectoryEntry* entry = find_empty_dir_entry();
@@ -184,14 +203,14 @@ int create_file(const char* name, const char* ext, int size, const char* data) {
     memset(entry->name, ' ', sizeof(entry->name));
     memset(entry->extension, ' ', sizeof(entry->extension));
 
-    strncpy(entry->name, name, 8);
-    entry->name[7] = '\0';
+    strncpy(entry->name, name, 24);
+    entry->name[24] = '\0';
     strncpy(entry->extension, ext, 3);
     entry->extension[3] = '\0';
     entry->size = size;
     entry->is_dir = 0;
 
-    printf("create_file: Creating file %.8s.%.3s\n", entry->name, entry->extension);
+    printf("create_file: Creating file %.25s.%.3s\n", entry->name, entry->extension);// cambiare 25 e 3 per la print
 
     int cluster = get_free_cluster();
     if (cluster == FAT_FULL) {
@@ -219,7 +238,7 @@ int create_file(const char* name, const char* ext, int size, const char* data) {
     fseek(fat_file, sizeof(FileSystem), SEEK_SET);
     fwrite(fat_table, fs->fat_size, 1, fat_file);
 
-    printf("create_file: File %.8s.%.3s created successfully\n", entry->name, entry->extension);
+    printf("create_file: File %.25s.%.3s created successfully\n", entry->name, entry->extension);
 
     return 0;
 }
@@ -231,9 +250,9 @@ DirectoryEntry* locate_file(const char* name, const char* ext, char is_dir) {
         DirectoryEntry* dir = (DirectoryEntry*)&data_blocks[cluster * fs->cluster_size];
         for (int i = 0; i < fs->cluster_size / sizeof(DirectoryEntry); i++) {
             DirectoryEntry* entry = &dir[i];
-            printf("locate_file: Checking entry %.8s.%.3s\n", entry->name, entry->extension);
-            if (strncmp(entry->name, name, 8) == 0 && strncmp(entry->extension, ext, 3) == 0 && entry->is_dir == is_dir) {
-                printf("locate_file: Found %.8s.%.3s\n", name, ext);
+            printf("locate_file: Checking entry %.25s.%.3s\n", entry->name, entry->extension);
+            if (strncmp(entry->name, name, 24) == 0 && strncmp(entry->extension, ext, 3) == 0 && entry->is_dir == is_dir) {
+                printf("locate_file: Found %.25s.%.3s\n", name, ext);
                 return entry;
             }
         }
@@ -276,6 +295,7 @@ int remove_file(const char* name, const char* ext) {
     }
 
     file->name[0] = DELETED_ENTRY;
+    
 
     fseek(data_file, 0, SEEK_SET);
     fwrite(data_blocks, fs->data_size, 1, data_file);
@@ -357,25 +377,43 @@ void display_fs_image(unsigned int max_bytes) {
     printf("\n");
 }
 
-int read_file_content(const char* name, const char* ext, char* buffer) {
-    DirectoryEntry* file = locate_file(name, ext, 0);
+int read_file_content(FileHandle *handle, char *buffer, int size) {
+    DirectoryEntry* file = handle->file_entry;
     if (file == NULL) {
         return FILE_READ_ERROR;
     }
 
     int current_cluster = file->first_cluster;
-    int bytes_read = 0;
     int cluster_size = fs->cluster_size;
-    int file_size = file->size;
-    while (current_cluster != FAT_END && file_size > 0) {
-        int bytes_to_read = (file_size > cluster_size) ? cluster_size : file_size;
-        memcpy(buffer + bytes_read, &data_blocks[current_cluster * cluster_size], bytes_to_read);
+    int clusters_to_skip = handle->position / cluster_size;
+    int byte_offset = handle->position % cluster_size;
+
+    for (int i = 0; i < clusters_to_skip; i++) {
+        current_cluster = fat_table[current_cluster];
+        if (current_cluster == FAT_END) {
+            return FILE_READ_ERROR;
+        }
+    }
+
+    int bytes_read = 0;
+    int file_size = file->size - handle->position;
+
+    while (current_cluster != FAT_END && file_size > 0 && size > 0) {
+        int bytes_to_read = (file_size > cluster_size - byte_offset) ? cluster_size - byte_offset : file_size;
+        bytes_to_read = (bytes_to_read > size) ? size : bytes_to_read;
+
+        memcpy(buffer + bytes_read, &data_blocks[current_cluster * cluster_size + byte_offset], bytes_to_read);
         bytes_read += bytes_to_read;
         file_size -= bytes_to_read;
+        size -= bytes_to_read;
+        byte_offset = 0;
+
         current_cluster = fat_table[current_cluster];
     }
+
     return bytes_read;
 }
+
 
 int write_file_content(const char* name, const char* ext, const char* data, int offset, int size) {
     DirectoryEntry* file = locate_file(name, ext, 0);
@@ -438,3 +476,23 @@ int write_file_content(const char* name, const char* ext, const char* data, int 
     return bytes_written;
 }
 
+int seek_file(FileHandle *handle, int offset, int origin) {
+    int new_position = handle->position;
+
+    if (origin == SEEK_SET) {
+        new_position = offset;
+    } else if (origin == SEEK_CUR) {
+        new_position += offset;
+    } else if (origin == SEEK_END) {
+        new_position = handle->file_entry->size + offset; 
+    } else {
+        return -1; // Invalid origin
+    }
+
+    if (new_position < 0 || new_position > handle->file_entry->size) {
+        return -1; // Out of bounds
+    }
+
+    handle->position = new_position;
+    return 0; // Success
+}
