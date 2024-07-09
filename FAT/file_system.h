@@ -1,27 +1,20 @@
-#include <stdint.h>
-#include <stdbool.h>
-
 #ifndef FILE_SYSTEM_H
 #define FILE_SYSTEM_H
 
-// Dimensione di un blocco in byte
+#include <stdint.h>
+#include <stdbool.h>
+
 #define BLOCK_SIZE 512
-// Numero di blocchi per cluster
 #define BLOCKS_PER_CLUSTER 1
-// Numero totale di blocchi nel file system
 #define TOTAL_BLOCKS 65536
 
-// Definizione di valori per la FAT
-#define FAT_UNUSED 0x00000000   // Blocco non usato
-#define FAT_END 0x0FFFFFF8      // Fine della catena di blocchi
-#define FAT_OCCUPIED 0xFFFFFFFF // Blocco occupato
+#define FAT_UNUSED 0x00000000
+#define FAT_END 0x0FFFFFF8
+#define FAT_OCCUPIED 0xFFFFFFFF
 
-// Dimensione di una voce di directory in byte
 #define DIR_ENTRY_SIZE 32
-// Valore che indica una voce di directory cancellata
 #define DELETED_ENTRY 0xE5
 
-// Codici di errore
 #define DIR_CREATE_ERROR -1
 #define FILE_CREATE_ERROR -2
 #define INIT_ERROR -3
@@ -31,36 +24,37 @@
 #define FAT_FULL -7
 #define FILE_WRITE_ERROR -8
 
-// Struttura che rappresenta il file system
 typedef struct {
-    int bytes_per_block;     
-    int fat_entries;         // Numero di voci nella FAT
-    int cluster_size;        
-    int fat_size;            
-    int data_size;           // Dimensione dell'area dati
-    int total_blocks;        
-    char current_directory[25]; 
+    int bytes_per_block;
+    int fat_entries;
+    int cluster_size;
+    int fat_size;
+    int data_size;
+    int total_blocks;
+    char current_directory[25];
 } FileSystem;
 
-// Struttura che rappresenta una voce di directory
 typedef struct DirectoryEntry {
-    char name[25];               
-    char extension[3];           
-    char is_dir;                 // Flag che indica se è una directory
-    struct DirectoryEntry* parent; // Puntatore alla directory padre
-    int first_cluster;           
-    int size;                    
-    int entry_count;             // Numero di voci nella directory (se directory)
+    char name[25];
+    char extension[3];
+    char is_dir;
+    struct DirectoryEntry* parent;
+    int first_cluster;
+    int size;
+    int entry_count;
 } __attribute__((packed)) DirectoryEntry;
 
-// Struttura che rappresenta un handle per un file aperto
 typedef struct FileHandle {
-    DirectoryEntry* file_entry; // Puntatore alla voce di directory del file
-    int position;               // Posizione corrente nel file
+    DirectoryEntry* file_entry;
+    int position;
 } FileHandle;
 
-// Funzioni di gestione del file system
-int fs_initialize(const char* fat_path, const char* data_path);
+extern FileSystem *fs;
+
+int fs_initialize(const char* file_path);
+int fs_load(const char* file_path);
+int fs_save();
+
 DirectoryEntry* get_current_dir();
 FileSystem* get_fs();
 int get_free_cluster();
@@ -80,4 +74,3 @@ int write_file_content(const char* name, const char* ext, const char* data, int 
 int seek_file(FileHandle *handle, int offset, int origin);
 
 #endif
-
