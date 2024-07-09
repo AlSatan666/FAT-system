@@ -2,27 +2,33 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h> // for access()
 
-// Dichiarazione di variabili globali
 FileSystem *fs;
 DirectoryEntry *current_dir;
 int *fat_table;
 char *data_blocks;
-FILE *fat_file;
-FILE *data_file;
+FILE *file_system_file;
 
-// Inizializza il file system
-int fs_initialize(const char* fat_path, const char* data_path) {
-    // Apertura dei file FAT e DATA
-    fat_file = fopen(fat_path, "wb+");
-    data_file = fopen(data_path, "wb+");
+int fs_initialize(const char* file_path) {
+    if (access(file_path, F_OK) != -1) {
+        printf("File already exists. Attempting to load the existing file system.\n");
+        int load_result = fs_load(file_path);
+        if (load_result == 0) {
+            printf("fs_initialize: Loading existing file system: PASSED\n");
+            return 0;
+        } else {
+            printf("fs_initialize: Loading existing file system: FAILED\n");
+            return INIT_ERROR;
+        }
+    }
 
-    if (!fat_file || !data_file) {
-        printf("Error creating or opening FAT/data files\n");
+    file_system_file = fopen(file_path, "wb+");
+    if (!file_system_file) {
+        printf("Error creating file system file\n");
         return INIT_ERROR;
     }
 
-    // Allocazione e inizializzazione della struttura del file system
     fs = (FileSystem*)malloc(sizeof(FileSystem));
     fs->bytes_per_block = BLOCK_SIZE;
     fs->total_blocks = TOTAL_BLOCKS;
@@ -30,48 +36,92 @@ int fs_initialize(const char* fat_path, const char* data_path) {
     fs->fat_entries = (fs->total_blocks) * fs->bytes_per_block / fs->cluster_size;
     fs->fat_size = fs->fat_entries * 4;
     fs->data_size = (fs->total_blocks - (fs->fat_size / fs->bytes_per_block)) * fs->bytes_per_block - sizeof(FileSystem);
-    strcpy(fs->current_directory, "ROOT"); // Inizializza il nome della directory corrente come ROOT
+    strcpy(fs->current_directory, "ROOT");
 
-    // Allocazione e inizializzazione della tabella FAT
     fat_table = (int*)malloc(fs->fat_size);
     memset(fat_table, FAT_UNUSED, fs->fat_size);
 
-    // Allocazione e inizializzazione dei blocchi dati
     data_blocks = (char*)malloc(fs->data_size);
     memset(data_blocks, 0x00, fs->data_size);
 
-    // Inizializzazione della directory radice
     current_dir = (DirectoryEntry*)data_blocks;
     current_dir->first_cluster = 0;
     strncpy(current_dir->name, "ROOT", 8);
     memset(current_dir->extension, 0, 3);
-    
     current_dir->entry_count = 0;
     current_dir->is_dir = 1;
     current_dir->parent = NULL;
     fat_table[0] = FAT_END;
 
+    fwrite(fs, sizeof(FileSystem), 1, file_system_file);
+    fwrite(fat_table, fs->fat_size, 1, file_system_file);
+    fwrite(data_blocks, fs->data_size, 1, file_system_file);
 
-    // Scrittura delle strutture inizializzate sui file FAT e DATA
-    fwrite(fs, sizeof(FileSystem), 1, fat_file);
-    fwrite(fat_table, fs->fat_size, 1, fat_file);
-    fwrite(data_blocks, fs->data_size, 1, data_file);
+    printf("fs_initialize: Created new file system: PASSED\n");
+
+    return 0;
+}
+
+int fs_load(const char* file_path) {
+    file_system_file = fopen(file_path, "rb+");
+    if (!file_system_file) {
+        printf("Error opening file system file\n");
+        return INIT_ERROR;
+    }
+
+    fs = (FileSystem*)malloc(sizeof(FileSystem));
+    fread(fs, sizeof(FileSystem), 1, file_system_file);
+
+    fat_table = (int*)malloc(fs->fat_size);
+    fread(fat_table, fs->fat_size, 1, file_system_file);
+
+    data_blocks = (char*)malloc(fs->data_size);
+    fread(data_blocks, fs->data_size, 1, file_system_file);
+
+    current_dir = (DirectoryEntry*)data_blocks;
+
+    return 0;
+}
+
+
+int fs_save() {
+    if (!file_system_file) {
+        printf("fs_save: File system file not open\n");
+        return FILE_WRITE_ERROR;
+    }
+
+    fseek(file_system_file, 0, SEEK_SET);
+    size_t fs_write_size = fwrite(fs, sizeof(FileSystem), 1, file_system_file);
+    if (fs_write_size != 1) {
+        printf("fs_save: Failed to write FileSystem struct to file\n");
+        return FILE_WRITE_ERROR;
+    }
+
+    size_t fat_write_size = fwrite(fat_table, fs->fat_size, 1, file_system_file);
+    if (fat_write_size != 1) {
+        printf("fs_save: Failed to write FAT table to file\n");
+        return FILE_WRITE_ERROR;
+    }
+
+    size_t data_write_size = fwrite(data_blocks, fs->data_size, 1, file_system_file);
+    if (data_write_size != 1) {
+        printf("fs_save: Failed to write data blocks to file\n");
+        return FILE_WRITE_ERROR;
+    }
+
     return 0;
 }
 
 
 
-// Restituisce la directory corrente
 DirectoryEntry* get_current_dir() {
     return current_dir;
 }
 
-// Restituisce il puntatore alla struttura del file system
 FileSystem* get_fs() {
     return fs;
 }
 
-// Restituisce un cluster libero dalla tabella FAT
 int get_free_cluster() {
     for (int i = 1; i < fs->fat_entries; i++) {
         if (fat_table[i] == FAT_UNUSED) {
@@ -81,7 +131,6 @@ int get_free_cluster() {
     return FAT_FULL;
 }
 
-// Trova una voce di directory vuota nella directory corrente
 DirectoryEntry* find_empty_dir_entry() {
     int cluster = current_dir->first_cluster;
     while (cluster != FAT_END) {
@@ -97,13 +146,12 @@ DirectoryEntry* find_empty_dir_entry() {
     return NULL;
 }
 
-// Cambia la directory corrente
 int cd(const char* dir_name) {
     printf("Changing to directory: %s\n", dir_name);
     if (strcmp(dir_name, "..") == 0) {
         if (current_dir->parent != NULL) {
             current_dir = current_dir->parent;
-            strcpy(fs->current_directory, current_dir->name); // Aggiorna il nome della directory corrente
+            strcpy(fs->current_directory, current_dir->name);
         }
         return 0;
     }
@@ -116,7 +164,7 @@ int cd(const char* dir_name) {
             if (strcmp(entry->name, dir_name) == 0 && entry->is_dir) {
                 current_dir = (DirectoryEntry*)&data_blocks[entry->first_cluster * fs->cluster_size];
                 current_dir->parent = dir;
-                strcpy(fs->current_directory, entry->name); // Aggiorna il nome della directory corrente
+                strcpy(fs->current_directory, entry->name);
                 return 0;
             }
         }
@@ -125,10 +173,9 @@ int cd(const char* dir_name) {
     return FILE_NOT_FOUND;
 }
 
-// Elenca il contenuto della directory corrente
 void ls() {
     int cluster = current_dir->first_cluster;
-    printf("Contents of directory (%s):\n", fs->current_directory); // Stampa il nome della directory corrente
+    printf("Contents of directory (%s):\n", fs->current_directory);
     while (cluster != FAT_END) {
         DirectoryEntry* dir = (DirectoryEntry*)&data_blocks[cluster * fs->cluster_size];
         for (int i = 0; i < fs->cluster_size / sizeof(DirectoryEntry); i++) {
@@ -140,9 +187,9 @@ void ls() {
                 continue;
             }
             if (entry->is_dir) {
-                printf("%.25s/\t", entry->name); // Aggiornato per mostrare nomi fino a 25 caratteri
+                printf("%.25s/\t", entry->name);
             } else {
-                printf("%.25s.%.3s\t", entry->name, entry->extension); // Aggiornato per mostrare nomi fino a 25 caratteri
+                printf("%.25s.%.3s\t", entry->name, entry->extension);
             }
         }
         cluster = fat_table[cluster];
@@ -150,7 +197,6 @@ void ls() {
     printf("\n");
 }
 
-// Crea una nuova directory
 int create_dir(const char* name) {
     DirectoryEntry* entry = find_empty_dir_entry();
     if (entry == NULL) {
@@ -185,17 +231,13 @@ int create_dir(const char* name) {
     new_dir[1].size = 0;
     new_dir[1].parent = current_dir;
 
-    fseek(data_file, 0, SEEK_SET);
-    fwrite(data_blocks, fs->data_size, 1, data_file);
-    fseek(fat_file, sizeof(FileSystem), SEEK_SET);
-    fwrite(fat_table, fs->fat_size, 1, fat_file);
+    fs_save(); // Salva lo stato dopo la modifica
 
     printf("Directory created: %s\n", entry->name);
 
     return 0;
 }
 
-// Crea un nuovo file
 int create_file(const char* name, const char* ext, int size, const char* data) {
     DirectoryEntry* entry = find_empty_dir_entry();
     if (entry == NULL) {
@@ -212,7 +254,7 @@ int create_file(const char* name, const char* ext, int size, const char* data) {
     entry->size = size;
     entry->is_dir = 0;
 
-    printf("create_file: Creating file %.25s.%.3s\n", entry->name, entry->extension);// cambiare 25 e 3 per la print
+    printf("create_file: Creating file %.25s.%.3s\n", entry->name, entry->extension);
 
     int cluster = get_free_cluster();
     if (cluster == FAT_FULL) {
@@ -235,17 +277,13 @@ int create_file(const char* name, const char* ext, int size, const char* data) {
         current_cluster = next_cluster;
     }
 
-    fseek(data_file, 0, SEEK_SET);
-    fwrite(data_blocks, fs->data_size, 1, data_file);
-    fseek(fat_file, sizeof(FileSystem), SEEK_SET);
-    fwrite(fat_table, fs->fat_size, 1, fat_file);
+    fs_save(); // Salva lo stato dopo la modifica
 
     printf("create_file: File %.25s.%.3s created successfully\n", entry->name, entry->extension);
 
     return 0;
 }
 
-// Trova un file o una directory
 DirectoryEntry* locate_file(const char* name, const char* ext, char is_dir) {
     int cluster = current_dir->first_cluster;
     printf("locate_file: Searching for %s.%s in directory %s\n", name, ext, current_dir->name);
@@ -265,7 +303,6 @@ DirectoryEntry* locate_file(const char* name, const char* ext, char is_dir) {
     return NULL;
 }
 
-// Verifica se una directory è vuota
 int is_directory_empty(DirectoryEntry* dir) {
     int cluster = dir->first_cluster;
     while (cluster != FAT_END) {
@@ -281,7 +318,6 @@ int is_directory_empty(DirectoryEntry* dir) {
     return 1; // Vuota
 }
 
-// Rimuove un file
 int remove_file(const char* name, const char* ext) {
     printf("Attempting to remove file: %s.%s\n", name, ext);
     DirectoryEntry* file = locate_file(name, ext, 0);
@@ -301,17 +337,12 @@ int remove_file(const char* name, const char* ext) {
 
     file->name[0] = DELETED_ENTRY;
 
-    // Aggiornamento dei file FAT e DATA
-    fseek(data_file, 0, SEEK_SET);
-    fwrite(data_blocks, fs->data_size, 1, data_file);
-    fseek(fat_file, sizeof(FileSystem), SEEK_SET);
-    fwrite(fat_table, fs->fat_size, 1, fat_file);
+    fs_save(); // Salva lo stato dopo la modifica
 
     printf("File removed: %s.%s\n", name, ext);
     return 0;
 }
 
-// Rimuove una directory vuota
 int remove_empty_dir(DirectoryEntry* dir) {
     int current_cluster = dir->first_cluster;
     while (current_cluster != FAT_END) {
@@ -322,16 +353,11 @@ int remove_empty_dir(DirectoryEntry* dir) {
     }
     dir->name[0] = DELETED_ENTRY;
 
-    // Aggiornamento dei file FAT e DATA
-    fseek(data_file, 0, SEEK_SET);
-    fwrite(data_blocks, fs->data_size, 1, data_file);
-    fseek(fat_file, sizeof(FileSystem), SEEK_SET);
-    fwrite(fat_table, fs->fat_size, 1, fat_file);
+    fs_save(); // Salva lo stato dopo la modifica
 
     return 0;
 }
 
-// Rimuove una directory, con opzione ricorsiva
 int remove_dir(const char* name, int recursive) {
     printf("Attempting to remove directory: %s\n", name);
     DirectoryEntry* dir = locate_file(name, "", 1);
@@ -375,7 +401,6 @@ int remove_dir(const char* name, int recursive) {
     }
 }
 
-// Visualizza l'immagine del file system
 void display_fs_image(unsigned int max_bytes) {
     if (max_bytes > fs->bytes_per_block * fs->total_blocks) {
         max_bytes = fs->bytes_per_block * fs->total_blocks;
@@ -386,7 +411,6 @@ void display_fs_image(unsigned int max_bytes) {
     printf("\n");
 }
 
-// Legge il contenuto di un file
 int read_file_content(FileHandle *handle, char *buffer, int size) {
     DirectoryEntry* file = handle->file_entry;
     if (file == NULL) {
@@ -424,7 +448,6 @@ int read_file_content(FileHandle *handle, char *buffer, int size) {
     return bytes_read;
 }
 
-// Scrive il contenuto in un file
 int write_file_content(const char* name, const char* ext, const char* data, int offset, int size) {
     DirectoryEntry* file = locate_file(name, ext, 0);
     if (file == NULL) {
@@ -476,18 +499,13 @@ int write_file_content(const char* name, const char* ext, const char* data, int 
 
     file->size = offset + bytes_written > file->size ? offset + bytes_written : file->size;
 
-    // Aggiornamento dei file FAT e DATA
-    fseek(data_file, 0, SEEK_SET);
-    fwrite(data_blocks, fs->data_size, 1, data_file);
-    fseek(fat_file, sizeof(FileSystem), SEEK_SET);
-    fwrite(fat_table, fs->fat_size, 1, fat_file);
+    fs_save(); // Salva lo stato dopo la modifica
 
     printf("write_file_content: Total bytes written %d\n", bytes_written);
 
     return bytes_written;
 }
 
-// Sposta la posizione di lettura/scrittura di un file
 int seek_file(FileHandle *handle, int offset, int origin) {
     int new_position = handle->position;
 
