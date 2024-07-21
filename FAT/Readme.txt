@@ -6,6 +6,9 @@ step for work:
 
 -open terminal
 
-gcc -o myfs main.c file_system.c test_file_system.c
-
+comandi diretti da terminale:
+gcc -o myfs main.c file_system.c
 ./myfs
+
+comandi con makefile:
+make run
