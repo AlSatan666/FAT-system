@@ -7,6 +7,7 @@
 #define BLOCK_SIZE 512
 #define BLOCKS_PER_CLUSTER 1
 #define TOTAL_BLOCKS 65536
+#define FILE_SYSTEM_SIZE (TOTAL_BLOCKS * BLOCK_SIZE)
 
 #define FAT_UNUSED 0x00000000
 #define FAT_END 0x0FFFFFF8
@@ -23,6 +24,7 @@
 #define DIR_NOT_EMPTY -6
 #define FAT_FULL -7
 #define FILE_WRITE_ERROR -8
+#define INVALID_DIRECTORY -9
 
 typedef struct {
     int bytes_per_block;
@@ -39,7 +41,7 @@ typedef struct DirectoryEntry {
     char extension[3];
     char is_dir;
     struct DirectoryEntry* parent;
-    int first_cluster;
+    int first_block;
     int size;
     int entry_count;
 } __attribute__((packed)) DirectoryEntry;
@@ -57,7 +59,7 @@ int fs_save();
 
 DirectoryEntry* get_current_dir();
 FileSystem* get_fs();
-int get_free_cluster();
+int get_free_block();
 DirectoryEntry* find_empty_dir_entry();
 int cd(const char* dir_name);
 void ls();
@@ -69,8 +71,9 @@ int remove_empty_dir(DirectoryEntry* dir);
 bool is_dir_empty(DirectoryEntry* dir);
 int remove_dir(const char* name, int recursive);
 void display_fs_image(unsigned int max_bytes);
-int read_file_content(FileHandle *handle, char *buffer, int size);
+int read_file_content(FileHandle *handle, char *buffer, int size); // Aggiornato con il parametro size
 int write_file_content(const char* name, const char* ext, const char* data, int offset, int size);
 int seek_file(FileHandle *handle, int offset, int origin);
+
 
 #endif
