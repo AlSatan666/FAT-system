@@ -609,3 +609,4 @@ int seek_file(FileHandle *handle, int offset, int origin) {
     handle->position = new_position;
     return 0;
 }
+
