@@ -6,6 +6,7 @@
 #include <sys/mman.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <errno.h>
 
 FileSystem *fs;
 DirectoryEntry *current_dir;
@@ -607,6 +608,62 @@ int seek_file(FileHandle *handle, int offset, int origin) {
     }
 
     handle->position = new_position;
+    return 0;
+}
+
+int copy2fs(const char* host_path, const char* fs_name, const char* fs_ext) {
+    
+    FILE* host_file = fopen(host_path, "rb");
+    if (!host_file) {
+        perror("Error opening host file");
+        return FILE_NOT_FOUND;
+    }
+
+    fseek(host_file, 0, SEEK_END);
+    int size = ftell(host_file);
+    fseek(host_file, 0, SEEK_SET);
+
+    char* buffer = (char*)malloc(size);
+    if (!buffer) {
+        fclose(host_file);
+        return FILE_WRITE_ERROR;
+    }
+
+    fread(buffer, 1, size, host_file);
+    fclose(host_file);
+
+    int result = create_file(fs_name, fs_ext, size, buffer);
+    free(buffer);
+
+    return result;
+}
+
+int copy2host(const char* fs_name, const char* fs_ext, const char* host_path) {
+
+    DirectoryEntry* file = locate_file(fs_name, fs_ext, 0);
+    if (file == NULL) {
+        printf("File not found in FAT file system: %s.%s\n", fs_name, fs_ext);
+        return FILE_NOT_FOUND;
+    }
+
+    FILE* host_file = fopen(host_path, "wb");
+    if (host_file == NULL) {
+        perror("Error opening host file");
+        return FILE_WRITE_ERROR;
+    }
+
+    FileHandle handle;
+    handle.file_entry = file;
+    handle.position = 0;
+
+    char buffer[BLOCK_SIZE];
+    int bytes_read;
+    while ((bytes_read = read_file_content(&handle, buffer, BLOCK_SIZE)) > 0) {
+        fwrite(buffer, 1, bytes_read, host_file);
+    }
+
+    fclose(host_file);
+    printf("File copied to host file system.\n");
     return 0;
 }
 
