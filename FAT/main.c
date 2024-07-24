@@ -3,7 +3,7 @@
 #include <string.h>
 #include "file_system.h"
 
-#define MAX_INPUT_SIZE 256
+#define MAX_INPUT_SIZE 256000
 #define MAX_ARGS 10
 #define DATATICUS_FILE "DATATICUS.dat"
 
@@ -23,6 +23,8 @@ void print_help() {
     printf("  write <name>.<ext> <offset> <data>       Write to file\n");
     printf("  read <name>.<ext>                        Read from file\n");
     printf("  seek <name>.<ext> <offset>               Seek within file\n");
+    printf("  copy2fs <host> <fs>                      Copia un file dal sistema host al file system FAT.");
+    printf("  copy2host  <fs> host>                    Copia un file dal file system FAT al sistema host.");
     printf("  exit                                     Exit the shell\n");
     printf("  help                                     Display this help message\n");
 }
@@ -173,6 +175,34 @@ void execute_command(char** args) {
         } else {
             printf("Usage: seek <name>.<ext> <offset>\n");
         }
+    } else if (strcmp(args[0], "copy2fs") == 0) {
+        if (args[1] && args[2]) {
+            char* host_path = args[1];
+            char* fs_path = args[2];
+            char* name = strsep(&fs_path, ".");
+            char* ext = fs_path;
+            if (copy2fs(host_path, name, ext) == 0) {
+                printf("File copied to FAT file system.\n");
+            } else {
+                printf("Failed to copy file to FAT file system.\n");
+            }
+        } else {
+            printf("Usage: copy2fs <host> <fs>\n");
+        }
+    } else if (strcmp(args[0], "copy2host") == 0) {
+        if (args[1] && args[2]) {
+            char* fs_path = args[1];
+            char* host_path = args[2];
+            char* name = strsep(&fs_path, ".");
+            char* ext = fs_path;
+            if (copy2host(name, ext, host_path) == 0) {
+                printf("File copied to host file system.\n");
+            } else {
+                printf("Failed to copy file to host file system.\n");
+            }
+        } else {
+            printf("Usage: copy2host <fs> <host>\n");
+        }
     } else if (strcmp(args[0], "help") == 0) {
         print_help();
     } else if (strcmp(args[0], "exit") == 0) {
@@ -183,6 +213,7 @@ void execute_command(char** args) {
         print_help();
     }
 }
+
 
 int main() {
     char input[MAX_INPUT_SIZE];
