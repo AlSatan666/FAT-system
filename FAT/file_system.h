@@ -71,8 +71,10 @@ int remove_empty_dir(DirectoryEntry* dir);
 bool is_dir_empty(DirectoryEntry* dir);
 int remove_dir(const char* name, int recursive);
 void display_fs_image(unsigned int max_bytes);
-int read_file_content(FileHandle *handle, char *buffer, int size); 
+int read_file_content(FileHandle *handle, char *buffer, int size);
 int write_file_content(const char* name, const char* ext, const char* data, int offset, int size);
 int seek_file(FileHandle *handle, int offset, int origin);
+int copy2fs(const char* host_path, const char* fs_name, const char* fs_ext);
+int copy2host(const char* fs_name, const char* fs_ext, const char* host_path);
 
 #endif
