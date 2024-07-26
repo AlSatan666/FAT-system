@@ -141,6 +141,7 @@ int get_free_block() {
     return FAT_FULL;
 }
 
+
 DirectoryEntry* find_empty_dir_entry() {
     int block = current_dir->first_block;
     while (block != FAT_END) {
@@ -192,6 +193,7 @@ int cd(const char* dir_name) {
     return FILE_NOT_FOUND;
 }
 
+
 void ls() {
     if (current_dir == NULL) {
         printf("Error: current_dir is NULL\n");
@@ -235,8 +237,8 @@ int create_dir(const char* name) {
     }
 
     memset(entry->name, ' ', sizeof(entry->name));
-    strncpy(entry->name, name, 24);
-    entry->name[24] = '\0';
+    strncpy(entry->name, name, sizeof(entry->name) - 1); // Assicurati di non superare la lunghezza massima
+    entry->name[sizeof(entry->name) - 1] = '\0';
     entry->size = 0;
     entry->is_dir = 1;
 
@@ -252,13 +254,15 @@ int create_dir(const char* name) {
     memset(new_dir, 0, fs->bytes_per_block);
 
     entry->first_block = block;
-    strncpy(new_dir[0].name, ".", 8);
+    strncpy(new_dir[0].name, ".", sizeof(new_dir[0].name) - 1);
+    new_dir[0].name[sizeof(new_dir[0].name) - 1] = '\0';
     new_dir[0].first_block = block;
     new_dir[0].is_dir = 1;
     new_dir[0].size = 0;
     new_dir[0].parent = current_dir;
 
-    strncpy(new_dir[1].name, "..", 8);
+    strncpy(new_dir[1].name, "..", sizeof(new_dir[1].name) - 1);
+    new_dir[1].name[sizeof(new_dir[1].name) - 1] = '\0';
     new_dir[1].first_block = current_dir->first_block;
     new_dir[1].is_dir = 1;
     new_dir[1].size = 0;
@@ -270,6 +274,7 @@ int create_dir(const char* name) {
 
     return 0;
 }
+
 
 int create_file(const char* name, const char* ext, int size, const char* data) {
     DirectoryEntry* entry = find_empty_dir_entry();
@@ -337,6 +342,8 @@ DirectoryEntry* locate_file(const char* name, const char* ext, char is_dir) {
     return NULL;
 }
 
+
+
 int is_directory_empty(DirectoryEntry* dir) {
     int block = dir->first_block;
     while (block != FAT_END) {
@@ -365,20 +372,22 @@ int remove_file(const char* name, const char* ext) {
     int current_block = file->first_block;
     int next_block;
 
-    next_block = -1;//non valido
+    while (current_block != FAT_END && current_block != 0) {
 
-    while (current_block != FAT_END && current_block != FAT_UNUSED) {
-        printf("Clearing block %d\n", current_block);
 
         next_block = fat_table[current_block];
-
         if (next_block < 0 || next_block >= fs->fat_entries) {
-            printf("Error: Invalid next block %d from block %d\n", next_block, current_block);
-            return FILE_WRITE_ERROR;
+            fat_table[current_block] = FAT_UNUSED;
+            memset(&data_blocks[current_block * fs->bytes_per_block], 0x00, fs->bytes_per_block);
+            break;
         }
 
         fat_table[current_block] = FAT_UNUSED;
         memset(&data_blocks[current_block * fs->bytes_per_block], 0x00, fs->bytes_per_block);
+
+        if (next_block == FAT_END || next_block == 0) {
+            break;
+        }
 
         current_block = next_block;
     }
@@ -438,6 +447,8 @@ int remove_dir(const char* name, int recursive) {
     }
 }
 
+
+
 int remove_empty_dir(DirectoryEntry* dir) {
     int current_block = dir->first_block;
     while (current_block != FAT_END) {
@@ -463,7 +474,7 @@ void display_fs_image(unsigned int max_bytes) {
     for (int i = 0; i < max_bytes; i++) {
         printf(" <%02x> ", *(fat_table + i));
     }
-    printf("\n");
+    printf("\n"); 
 }
 
 
@@ -480,18 +491,15 @@ int read_file_content(FileHandle *handle, char *buffer, int size) {
     int current_block = file_entry->first_block;
     int byte_offset = handle->position % BLOCK_SIZE;
 
-    printf("read_file_content: Reading from file '%s.%s', size %d, starting at position %d\n",
-           file_entry->name, file_entry->extension, total_size, handle->position);
-
     if (handle->position >= total_size) {
-        printf("read_file_content: Nothing to read (position beyond file size)\n");
+        buffer[0] = '\0';
         return 0;
     }
 
-    for (int i = 0; i < handle->position / BLOCK_SIZE; i++) {
+    int blocks_to_skip = handle->position / BLOCK_SIZE;
+    for (int i = 0; i < blocks_to_skip; i++) {
         current_block = fat_table[current_block];
         if (current_block == FAT_END) {
-            printf("read_file_content: Reached end of file\n");
             return bytes_read;
         }
     }
@@ -505,19 +513,25 @@ int read_file_content(FileHandle *handle, char *buffer, int size) {
             bytes_to_copy = total_size - handle->position;
         }
 
-        printf("read_file_content: Reading %d bytes from block %d at offset %d\n", bytes_to_copy, current_block, byte_offset);
-        
+        if (current_block >= fs->fat_entries || current_block == FAT_UNUSED || current_block == 0) {
+            return FILE_READ_ERROR;
+        }
+
+        printf("read_file_content: Reading %d bytes from block %d\n", bytes_to_copy, current_block); 
         memcpy(buffer + bytes_read, data_blocks + current_block * BLOCK_SIZE + byte_offset, bytes_to_copy);
         bytes_read += bytes_to_copy;
         handle->position += bytes_to_copy;
         byte_offset = 0;
 
         if (handle->position < total_size) {
-            current_block = fat_table[current_block];
-            if (current_block == FAT_END) {
-                printf("read_file_content: Reached end of file\n");
+            int next_block = fat_table[current_block];
+            if (next_block == FAT_END) {
                 break;
             }
+            if (next_block >= fs->fat_entries || next_block == FAT_UNUSED || next_block == 0) {
+                return FILE_READ_ERROR;
+            }
+            current_block = next_block;
         }
     }
 
@@ -527,18 +541,15 @@ int read_file_content(FileHandle *handle, char *buffer, int size) {
         buffer[size - 1] = '\0';
     }
 
-    printf("read_file_content: Total bytes read: %d\n", bytes_read);
-    printf("read_file_content: Content read: \"");
-    for (int i = 0; i < bytes_read; i++) {
-        printf("%c", buffer[i]);
-    }
-    printf("\"\n");
+    printf("File content:\n%s\n", buffer); 
 
     return bytes_read;
 }
 
 
 int write_file_content(const char* name, const char* ext, const char* data, int offset, int size) {
+    printf("write_file_content: Received %d bytes to write to file '%s.%s'\n", size, name, ext); 
+
     DirectoryEntry* file = locate_file(name, ext, 0);
     if (file == NULL) {
         return FILE_NOT_FOUND;
@@ -548,23 +559,63 @@ int write_file_content(const char* name, const char* ext, const char* data, int 
         offset = file->size;
     }
 
-    int current_block = file->first_block;
     int block_size = fs->bytes_per_block;
+    int total_blocks = fs->fat_entries;
+    int current_block = file->first_block;
     int blocks_to_skip = offset / block_size;
     int byte_offset = offset % block_size;
 
+    int* written_blocks = (int*)calloc(total_blocks, sizeof(int));
+    if (written_blocks == NULL) {
+        printf("write_file_content: Failed to allocate memory for tracking written blocks\n");
+        return FILE_WRITE_ERROR;
+    }
+
     for (int i = 0; i < blocks_to_skip; i++) {
+        while (fat_table[current_block] == FAT_END || fat_table[current_block] == 0) {
+            int new_block = get_free_block();
+            if (new_block == FAT_FULL) {
+                free(written_blocks);
+                return FILE_WRITE_ERROR;
+            }
+            fat_table[current_block] = new_block;
+            fat_table[new_block] = FAT_END;
+            current_block = new_block;
+        }
         current_block = fat_table[current_block];
-        if (current_block == FAT_END || current_block == FAT_UNUSED || current_block >= fs->fat_entries) {
+        if (current_block == FAT_UNUSED || current_block >= fs->fat_entries || current_block == 0) {
+            free(written_blocks);
             return FILE_WRITE_ERROR;
         }
     }
 
+    int total_bytes_to_write = size;
     int bytes_written = 0;
-    while (size > 0) {
-        if (current_block == FAT_END) {
+
+    while (bytes_written < total_bytes_to_write) {
+        if (written_blocks[current_block] == 1) {
+            int next_block = fat_table[current_block];
+            if (next_block == FAT_END || next_block == 0) {
+                int new_block = get_free_block();
+                if (new_block == FAT_FULL) {
+                    free(written_blocks);
+                    return FILE_WRITE_ERROR;
+                }
+                fat_table[current_block] = new_block;
+                fat_table[new_block] = FAT_END;
+                current_block = new_block;
+            } else {
+                current_block = next_block;
+            }
+            continue;
+        }
+
+        written_blocks[current_block] = 1;
+
+        if (current_block == FAT_END || current_block == 0) {
             int new_block = get_free_block();
             if (new_block == FAT_FULL) {
+                free(written_blocks);
                 return FILE_WRITE_ERROR;
             }
             fat_table[current_block] = new_block;
@@ -572,14 +623,33 @@ int write_file_content(const char* name, const char* ext, const char* data, int 
             current_block = new_block;
         }
 
-        int bytes_to_write = (size + byte_offset > block_size) ? block_size - byte_offset : size;
+        if (current_block == FAT_UNUSED || current_block >= fs->fat_entries || current_block == 0) {
+            printf("write_file_content: Error - current_block %d is out of bounds, unused, or invalid\n", current_block);
+            free(written_blocks);
+            return FILE_WRITE_ERROR;
+        }
+
+        int bytes_to_write = (total_bytes_to_write - bytes_written > block_size - byte_offset) ? block_size - byte_offset : total_bytes_to_write - bytes_written; 
         memcpy(&data_blocks[current_block * block_size + byte_offset], data + bytes_written, bytes_to_write);
 
-        size -= bytes_to_write;
         bytes_written += bytes_to_write;
         byte_offset = 0;
 
-        current_block = fat_table[current_block];
+        if (bytes_written < total_bytes_to_write) {
+            int next_block = fat_table[current_block];
+            if (next_block == FAT_END || next_block == 0) {
+                int new_block = get_free_block();
+                if (new_block == FAT_FULL) {
+                    free(written_blocks);
+                    return FILE_WRITE_ERROR;
+                }
+                fat_table[current_block] = new_block;
+                fat_table[new_block] = FAT_END;
+                current_block = new_block;
+            } else {
+                current_block = next_block;
+            }
+        }
     }
 
     file->size = offset + bytes_written > file->size ? offset + bytes_written : file->size;
@@ -587,8 +657,12 @@ int write_file_content(const char* name, const char* ext, const char* data, int 
     fs_save();
 
     printf("write_file_content: Written %d bytes to file '%s.%s' starting at offset %d\n", bytes_written, name, ext, offset);
+
+    free(written_blocks);
     return bytes_written;
 }
+
+
 
 int seek_file(FileHandle *handle, int offset, int origin) {
     int new_position = handle->position;
@@ -612,7 +686,6 @@ int seek_file(FileHandle *handle, int offset, int origin) {
 }
 
 int copy2fs(const char* host_path, const char* fs_name, const char* fs_ext) {
-    
     FILE* host_file = fopen(host_path, "rb");
     if (!host_file) {
         perror("Error opening host file");
@@ -632,14 +705,112 @@ int copy2fs(const char* host_path, const char* fs_name, const char* fs_ext) {
     fread(buffer, 1, size, host_file);
     fclose(host_file);
 
-    int result = create_file(fs_name, fs_ext, size, buffer);
-    free(buffer);
+    DirectoryEntry* entry = find_empty_dir_entry();
+    if (entry == NULL) {
+        free(buffer);
+        return FILE_CREATE_ERROR;
+    }
 
-    return result;
+    memset(entry->name, ' ', sizeof(entry->name));
+    memset(entry->extension, ' ', sizeof(entry->extension));
+
+    strncpy(entry->name, fs_name, 24);
+    entry->name[24] = '\0';
+    strncpy(entry->extension, fs_ext, 3);
+    entry->extension[3] = '\0';
+    entry->size = size;
+    entry->is_dir = 0;
+
+    int block = get_free_block();
+    if (block == FAT_FULL) {
+        free(buffer);
+        return FILE_CREATE_ERROR;
+    }
+
+    entry->parent = current_dir;
+    entry->first_block = block;
+    int block_size = fs->bytes_per_block;
+    int blocks_needed = (size + block_size - 1) / block_size;
+    int current_block = block;
+
+    int* written_blocks = (int*)calloc(fs->fat_entries, sizeof(int));
+    if (!written_blocks) {
+        free(buffer);
+        return FILE_WRITE_ERROR;
+    }
+
+    int bytes_written = 0;
+    while (bytes_written < size) {
+        if (written_blocks[current_block] == 1) {
+            int next_block = fat_table[current_block];
+            if (next_block == FAT_END || next_block == 0) {
+                next_block = get_free_block();
+                if (next_block == FAT_FULL) {
+                    free(buffer);
+                    free(written_blocks);
+                    return FILE_CREATE_ERROR;
+                }
+                fat_table[current_block] = next_block;
+                fat_table[next_block] = FAT_END;
+            }
+            current_block = next_block;
+            continue;
+        }
+
+        written_blocks[current_block] = 1;
+
+        if (current_block == FAT_END || current_block == 0) {
+            int new_block = get_free_block();
+            if (new_block == FAT_FULL) {
+                free(buffer);
+                free(written_blocks);
+                return FILE_CREATE_ERROR;
+            }
+            fat_table[current_block] = new_block;
+            fat_table[new_block] = FAT_END;
+            current_block = new_block;
+        }
+
+        if (current_block == FAT_UNUSED || current_block >= fs->fat_entries || current_block == 0) {
+            printf("copy2fs: Error - current_block %d is out of bounds, unused, or invalid\n", current_block);
+            free(buffer);
+            free(written_blocks);
+            return FILE_WRITE_ERROR;
+        }
+
+        int bytes_to_write = (size - bytes_written > block_size) ? block_size : size - bytes_written;
+        printf("copy2fs: Writing %d bytes to block %d\n", bytes_to_write, current_block);
+        memcpy(&data_blocks[current_block * block_size], &buffer[bytes_written], bytes_to_write);
+        bytes_written += bytes_to_write;
+
+        if (bytes_written < size) {
+            int next_block = fat_table[current_block];
+            if (next_block == FAT_END || next_block == 0) {
+                int new_block = get_free_block();
+                if (new_block == FAT_FULL) {
+                    free(buffer);
+                    free(written_blocks);
+                    return FILE_WRITE_ERROR;
+                }
+                fat_table[current_block] = new_block;
+                fat_table[new_block] = FAT_END;
+                current_block = new_block;
+            } else {
+                current_block = next_block;
+            }
+        }
+    }
+
+    free(buffer);
+    free(written_blocks);
+    fs_save();
+
+    printf("File copied to FAT file system.\n");
+    return 0;
 }
 
-int copy2host(const char* fs_name, const char* fs_ext, const char* host_path) {
 
+int copy2host(const char* fs_name, const char* fs_ext, const char* host_path) {
     DirectoryEntry* file = locate_file(fs_name, fs_ext, 0);
     if (file == NULL) {
         printf("File not found in FAT file system: %s.%s\n", fs_name, fs_ext);
@@ -666,4 +837,3 @@ int copy2host(const char* fs_name, const char* fs_ext, const char* host_path) {
     printf("File copied to host file system.\n");
     return 0;
 }
-
