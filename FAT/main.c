@@ -122,6 +122,8 @@ void execute_command(char** args) {
             char* ext = args[1];
             int offset = atoi(args[2]);
             char* data = args[3];
+            int data_length = strlen(data);
+            printf("execute_command: Writing %d bytes to file '%s.%s'\n", data_length, name, ext);
             if (ext) {
                 write_file_content(name, ext, data, offset, strlen(data));
             } else {
@@ -135,7 +137,7 @@ void execute_command(char** args) {
             char* name = strsep(&args[1], ".");
             char* ext = args[1];
             if (ext) {
-                char buffer[1024];
+                char buffer[10240];
                 FileHandle handle;
                 handle.file_entry = locate_file(name, ext, 0);
                 handle.position = 0;
@@ -233,4 +235,3 @@ int main() {
 
     return 0;
 }
-
